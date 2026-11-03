@@ -131,3 +131,9 @@ Desktop.ini
 *.rej
 *.tmp
 *.temp
+
+# Wails Windows Desktop generated assets
+/desktop/build/bin/
+/desktop/frontend/wailsjs/
+/desktop/frontend/node_modules/
+/desktop/.wails/

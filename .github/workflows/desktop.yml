@@ -1,0 +1,53 @@
+name: NodeSwarm Windows Desktop App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'internal/agent/**'
+      - 'internal/client/**'
+      - 'internal/desktopcore/**'
+      - 'internal/control/**'
+      - 'internal/manager/**'
+      - 'go.mod'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Build native Windows EXE
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify shared core tests
+        run: go test ./... -count=1
+      - name: Install pinned Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+      - name: Resolve desktop module
+        working-directory: desktop
+        run: go mod tidy
+      - name: Build native desktop app
+        working-directory: desktop
+        run: wails build -clean -webview2 embed
+      - name: Verify desktop executable
+        shell: pwsh
+        run: |
+          $exe = 'desktop/build/bin/NodeSwarm-Desktop.exe'
+          if (-not (Test-Path $exe)) { throw "Windows desktop binary is missing: $exe" }
+          $item = Get-Item $exe
+          if ($item.Length -lt 2000000) { throw "Desktop executable unexpectedly small: $($item.Length)" }
+          Get-FileHash $exe -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NodeSwarm-Desktop-windows-amd64
+          path: desktop/build/bin/NodeSwarm-Desktop.exe
+          retention-days: 30

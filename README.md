@@ -1,4 +1,4 @@
-# NodeSwarm v1.4.0 — 分布式云代理与 Windows 客户端管理平台
+# NodeSwarm v1.5.0 — 分布式云代理与 Windows 客户端管理平台
 
 面向自有云服务器及 Windows 工作站的 **Controller + Cloud Agent + Windows Client + SOCKS5 节点池** 运维平台。
 将分散在 Linux / Windows 主机上的 SOCKS5 服务，统一到一个轻量的 Web 控制台中管理。系统提供节点注册、心跳、主机指标、凭据保护、远程配置/启停、批量操作、节点监测与规则导出。Go 标准库构建，前端已嵌入二进制，无需 Node.js、数据库或额外 Web 静态资源。
@@ -293,3 +293,12 @@ python3 scripts/e2e_smoke.py
 ### Automatic Windows PID assignment (v1.4)
 
 Open **Windows 客户端**, select a workstation and click **自动填充空位**. The Controller fills only unbound observed PIDs, subject to the workstation's quota and available node capacity. Existing PID/node associations are kept unchanged; no established application session is migrated. The API accepts an optional optimistic `expectedRevision`. **These are desired bindings only**, and do not establish or verify real per-PID traffic routing. See `docs/CLIENT_AGENT.md`.
+
+## Windows 客户端：原生桌面 App (v1.5)
+
+用户 Windows 电脑不再需要打开浏览器或编辑 `client.env` 作为日常操作入口：请使用独立的 **NodeSwarm Desktop** 应用（Wails + Windows WebView2）。云端 Controller 的管理后台仍为 Web；Cloud Agent 继续作为无界面服务运行。
+
+- Windows 桌面工程：[`desktop/`](desktop/)，静态 UI 资源内嵌到 EXE，不运行本地 HTTP 管理端口。
+- 实际安装、注册、进程绑定和设备权限：[`docs/DESKTOP_APP.md`](docs/DESKTOP_APP.md)。
+- Windows GitHub Actions：`.github/workflows/desktop.yml`，产物 `NodeSwarm-Desktop.exe`。
+- 已有 PID 配额机制保持：主控上限与本机硬上限同时生效，同名 PID 透明隔离仍需独立实现。

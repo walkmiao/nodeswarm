@@ -34,6 +34,8 @@ type Config struct {
 	EnrollKey          string
 	DataDir            string
 	AllowInsecureHTTP  bool
+	OnClientReport     func(control.ClientSnapshot) // native desktop status; never contains proxy passwords
+	OnConnection       func(bool, string)           // heartbeat and connection state for native desktop
 }
 type credential struct {
 	Role       string `json:"role,omitempty"`
@@ -228,6 +230,9 @@ func Run(ctx context.Context, c Config) error {
 	defer d.service.Stop()
 	for {
 		if err := d.heartbeat(ctx); err != nil {
+			if c.OnConnection != nil {
+				c.OnConnection(false, err.Error())
+			}
 			if strings.Contains(err.Error(), "HTTP 401") {
 				d.service.Stop()
 				return fmt.Errorf("Agent credential revoked or invalid: %w", err)
@@ -242,6 +247,9 @@ func Run(ctx context.Context, c Config) error {
 				d.note("warning", "Controller unavailable for over 10 minutes; SOCKS5 service stopped (fail-closed)")
 			}
 		} else {
+			if c.OnConnection != nil {
+				c.OnConnection(true, "")
+			}
 			d.lastContact = time.Now()
 			d.disconnected = false
 		}
@@ -261,6 +269,9 @@ func (d *daemon) heartbeat(ctx context.Context) error {
 		Metrics: metrics, Runtime: d.service.Snapshot(), Logs: d.recentLogs()}
 	if d.workstation != nil {
 		current := d.workstation.Observe()
+		if d.cfg.OnClientReport != nil {
+			d.cfg.OnClientReport(current)
+		}
 		hb.Client = &current
 	}
 	var desired control.HeartbeatResponse
@@ -276,6 +287,9 @@ func (d *daemon) heartbeat(ctx context.Context) error {
 		// Immediate acknowledgement carries the observed engine status.
 		updated := hb
 		current := d.workstation.Observe()
+		if d.cfg.OnClientReport != nil {
+			d.cfg.OnClientReport(current)
+		}
 		updated.Client = &current
 		nextCtx, nextCancel := context.WithTimeout(ctx, 12*time.Second)
 		err := d.request(nextCtx, "/api/agent/heartbeat", d.creds.Token, updated, nil)

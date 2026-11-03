@@ -6,7 +6,7 @@ import zipfile
 import sys
 
 root = Path(__file__).resolve().parents[1]
-version = 'v1.4.0'
+version = 'v1.5.0'
 target = root.parent / f'nodeswarm-{version}-release.zip'
 binaries = (
     'node-console-linux-amd64',
@@ -18,9 +18,9 @@ for name in binaries:
     if not (root / name).is_file():
         sys.exit(f'Missing build artifact: {name}; run make all')
 
-files = ['README.md', 'Makefile', 'go.mod', 'Dockerfile', '.dockerignore', '.gitignore', '.gitattributes', 'main.go', 'main_test.go', 'api_agents.go', 'api_agents_test.go', 'api_clients.go', 'api_clients_test.go', 'probe_batch_test.go']
-include = ('internal', 'web', 'deploy', 'docs', 'scripts', '.github')
-exclude = {'__pycache__', 'node_modules', '.git', 'agent.env', 'data', 'runtime', 'logs'}
+files = ['README.md', 'Makefile', 'go.mod', 'Dockerfile', '.dockerignore', '.gitignore', '.gitattributes', 'main.go', 'main_test.go', 'api_agents.go', 'api_agents_test.go', 'api_clients.go', 'api_clients_test.go', 'api_client_device.go', 'api_client_device_test.go', 'probe_batch_test.go']
+include = ('internal', 'web', 'deploy', 'docs', 'scripts', '.github', 'desktop')
+exclude = {'__pycache__', 'node_modules', '.git', 'agent.env', 'data', 'runtime', 'logs', 'bin', 'wailsjs'}
 for folder in include:
     for candidate in (root / folder).rglob('*'):
         if not candidate.is_file() or any(part in exclude for part in candidate.relative_to(root).parts):
@@ -29,6 +29,10 @@ for folder in include:
             continue
         files.append(str(candidate.relative_to(root)))
 files.extend(binaries)
+# Native Windows GUI is built only on Windows runners. Never mislabel a CLI binary as a Desktop App.
+desktop_exe = root / 'desktop/build/bin/NodeSwarm-Desktop.exe'
+if desktop_exe.is_file():
+    files.append(str(desktop_exe.relative_to(root)))
 manifest = ''.join(f'{hashlib.sha256((root / f).read_bytes()).hexdigest()}  {f}\n' for f in binaries)
 with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=7) as z:
     for name in sorted(set(files)):

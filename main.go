@@ -79,6 +79,7 @@ func (a *app) routes() http.Handler {
 	})
 	a.agentsRoutes(mux)
 	a.clientRoutes(mux)
+	a.clientDeviceRoutes(mux)
 	mux.HandleFunc("GET /api/processes", func(w http.ResponseWriter, r *http.Request) {
 		procs, err := manager.ListProcesses()
 		if err != nil {

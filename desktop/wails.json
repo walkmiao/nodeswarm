@@ -1,0 +1,10 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "NodeSwarm Desktop",
+  "outputfilename": "NodeSwarm-Desktop",
+  "frontend:install": "echo frontend assets are checked in",
+  "frontend:build": "echo native frontend ready",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {"name":"NodeSwarm","email":""}
+}

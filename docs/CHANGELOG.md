@@ -1,3 +1,12 @@
+## v1.5.0 — Windows native desktop client (Wails)
+
+- Added a standalone Windows desktop App (`desktop/`) with native Wails/WebView2 window. The workstation user no longer needs a browser or CLI as the daily UI.
+- Embedded the existing Go Client Agent into the desktop process, including process enumeration, registration/heartbeat, policy state and local PID hard limit.
+- Added device-scoped, credential-authenticated self-service context and binding APIs. Client devices cannot access other devices or administrator endpoints; revision CAS, PID freshness and shared capacity remain enforced.
+- Added local settings, one-time enrollment handling, node/route views, quota auto-fill, and a clean GitHub-style desktop UI. No workstation-local HTTP API is exposed.
+- Added a Windows native desktop build workflow, per-user data storage, and install/uninstall scripts.
+- Backend tests and browser UI preview pass on Linux. Native Windows Wails/WebView2 build and in-person execution must be validated on Windows CI/real devices; same-name PID-level proxy isolation is still not implemented.
+
 ## v1.4.0 — per-workstation automatic PID slot filling
 
 - Added CAS-protected `POST /api/clients/{id}/auto-assign` with central quota, fresh PID/start-time inventory, node capacity and occupancy checks.
