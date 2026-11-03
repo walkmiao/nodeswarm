@@ -30,6 +30,7 @@ func (a *App) Assign(pid int, startTime, nodeID string) error {
 }
 func (a *App) Unassign(pid int, startTime string) error { return a.core.Unassign(pid, startTime) }
 func (a *App) AutoFill() (int, error)                   { return a.core.AutoFill() }
+func (a *App) ClearLogs()                              { a.core.ClearLogs() }
 
 // No method exposes the device token, enrollment key or SOCKS5 passwords.
 
