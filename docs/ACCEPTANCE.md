@@ -69,3 +69,13 @@
 - [x] Native Toolhelp32/Kernel32 process inventory implemented, with PowerShell fallback.
 - [x] CGO-free Windows amd64 cross-build succeeds.
 - [ ] Windows 11 real-host CPU/memory and PID-reuse regression; no Windows runtime available in this environment.
+
+## v1.4.0 regression acceptance (2026-11-03)
+
+- `go test ./... -count=1`, `go test -race ./... -count=1`, `go vet ./...`, and `node --check web/app.js`.
+- Go tests cover per-machine effective PID quota, revision CAS, concurrent node reservation, stable existing bindings, stale inventory rejection and durable auto-assignment.
+- Browser test `python3 scripts/client_visual_check.py` exercises authentication, quota update, manual allocation and the **自动填充空位** action using real Controller API and persisted state.
+- `internal/client/scan_failure_test.go` proves an inventory scan failure invalidates prior route states.
+- Cloud Agent / SOCKS5 lifecycle and real Windows driver compatibility remain separate acceptance items.
+
+**Limit:** v1.4.0 auto-assignment is a control-plane planned binding, NOT verified PID-level transparent redirection. It cannot be described as a completed multi-instance proxy product.

@@ -122,6 +122,15 @@ func (m *Manager) scanLocked() {
 	if err != nil {
 		m.scanError = err.Error()
 		m.state.ScanError = "进程扫描失败: " + err.Error()
+		// A process-name proxy has no way to know which newly started PID
+		// owns a flow when inventory is unavailable. Stop it instead of
+		// silently retaining an unsafe profile from an earlier scan.
+		m.stopLocked()
+		m.state.Error = "scan_unavailable: " + err.Error()
+		for i := range m.state.Routes {
+			m.state.Routes[i].Status = "scan_unavailable"
+			m.state.Routes[i].Detail = "进程身份不可验证；已停止托管代理程序"
+		}
 		return
 	}
 	m.scanError = ""
@@ -209,6 +218,7 @@ func (m *Manager) Apply(policy *control.ClientPolicy) error {
 	m.scanLocked()
 	// A failed scan must never be mistaken for an empty process inventory.
 	if m.scanError != "" {
+		m.state.Revision = policy.Revision
 		return fmt.Errorf("process scan unavailable: %s", m.scanError)
 	}
 	routes := make([]control.ClientRoute, 0, len(policy.Bindings))

@@ -97,3 +97,53 @@ func TestRemoteWindowsClientLifecycle(t *testing.T) {
 		t.Fatal("revoked agent still authorized")
 	}
 }
+
+func TestAutoAssignAPIRequiresAdminAndDoesNotLeakCredentials(t *testing.T) {
+	dir := t.TempDir()
+	store, err := manager.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := control.NewRegistry(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alerts, err := ops.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := (&app{store: store, registry: reg, alerts: alerts, adminToken: "admin", enrollKey: "enroll"}).routes()
+	req := func(auth string, revision int64) (int, string) {
+		b, _ := json.Marshal(map[string]any{"expectedRevision": revision})
+		r := httptest.NewRequest("POST", "http://localhost/api/clients/placeholder/auto-assign", bytes.NewReader(b))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+auth)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	if code, _ := req("", 0); code != 401 {
+		t.Fatal("unauthenticated auto route accepted")
+	}
+	id, _, err := reg.Enroll(control.EnrollInput{Kind: "client", Name: "desk"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err = reg.Report(control.Heartbeat{ID: id, Client: &control.ClientSnapshot{ObservedAt: now, Processes: []control.ClientProcess{{PID: 9, StartTime: "boot", Name: "Client.exe"}}}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	n, err := store.Create(manager.NodeInput{Name: "n", Host: "192.0.2.2", Port: 1080, Username: "user", Password: "private-proxy-secret", Capacity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = n
+	r := httptest.NewRequest("POST", "http://localhost/api/clients/"+id+"/auto-assign", strings.NewReader(`{"expectedRevision":0}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer admin")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"added":1`) || strings.Contains(w.Body.String(), "private-proxy-secret") {
+		t.Fatalf("auto API failure: %d %s", w.Code, w.Body.String())
+	}
+}

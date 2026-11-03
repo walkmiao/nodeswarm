@@ -111,6 +111,40 @@ func (a *app) clientRoutes(mux *http.ServeMux) {
 		_ = a.store.RecordEvent("info", fmt.Sprintf("更新 Windows Client %s 绑定策略：%d 项，修订 %d", v.Name, len(v.ClientBindings), v.Revision))
 		send(w, 200, v)
 	})
+	// Explicit one-click fill: keep existing routes and use available node
+	// capacity. This changes desired policy, not verified network egress.
+	mux.HandleFunc("POST /api/clients/{id}/auto-assign", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ExpectedRevision *int64 `json:"expectedRevision"`
+		}
+		if err := decode(r, &req); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		capacities := map[string]int{}
+		nodes, locals, _ := a.store.Snapshot()
+		for _, n := range nodes {
+			if manager.NodeAvailable(n, 0, time.Now()) && n.LastStatus != "error" && n.LastStatus != "failed" {
+				capacities[n.ID] = n.Capacity
+			}
+		}
+		for _, local := range locals {
+			capacities[local.NodeID]--
+		}
+		expected := int64(-1)
+		if req.ExpectedRevision != nil {
+			expected = *req.ExpectedRevision
+		}
+		v, added, err := a.registry.AutoAssignClient(r.PathValue("id"), capacities, expected)
+		if err != nil {
+			fail(w, 409, err)
+			return
+		}
+		if added > 0 {
+			_ = a.store.RecordEvent("info", fmt.Sprintf("Windows Client %s 自动规划 %d 个 PID，修订 %d", v.Name, added, v.Revision))
+		}
+		send(w, 200, map[string]any{"client": v, "added": added, "total": len(v.ClientBindings), "maxProxyPids": v.MaxProxyPIDs})
+	})
 	mux.HandleFunc("DELETE /api/clients/{id}", func(w http.ResponseWriter, r *http.Request) {
 		v, ok := a.registry.Find(r.PathValue("id"))
 		if !ok || v.Kind != "client" {

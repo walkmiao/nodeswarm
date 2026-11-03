@@ -1,3 +1,12 @@
+## v1.4.0 — per-workstation automatic PID slot filling
+
+- Added CAS-protected `POST /api/clients/{id}/auto-assign` with central quota, fresh PID/start-time inventory, node capacity and occupancy checks.
+- Preserves incumbent PID to node bindings; selects nodes with the lowest utilization, avoids failed probes.
+- Added the Web drawer action **自动填充空位**, manual edit conflict detection, and live acceptance coverage.
+- Added concurrent capacity, stale inventory, persistence and authenticated API tests.
+- When Windows process inventory fails, invalidate reported routes and stop the managed ProxyBridge CLI rather than continue using stale process identities.
+- Still does not claim PID-level transparent network interception.
+
 # NodeSwarm Change Log
 
 ## v1.3.1 - 2026-11-03

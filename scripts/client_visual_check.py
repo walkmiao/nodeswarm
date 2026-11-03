@@ -94,8 +94,18 @@ def main():
                 # be reviewed without another navigation.
                 page.locator('.client-node-select').first.wait_for()
                 assert page.locator('.client-node-select').first.input_value()==node['id']
+                # Expand this machine's quota then auto-fill its remaining slot.
+                page.locator('#client-limit').fill('2')
+                page.locator('[data-action="save-client-limit"]').click()
+                page.locator('#client-limit').wait_for()
+                assert page.locator('#client-limit').input_value()=='2'
+                page.locator('[data-action="auto-client-bindings"]').click()
+                page.wait_for_timeout(450)
+                code,view=request(base,'/api/clients/'+credential['id'],token=admin)
+                assert code==200 and len(view.get('clientBindings',[]))==2,(code,view)
+                assert len({b['pid'] for b in view['clientBindings']})==2
                 assert not errors,errors
-                print('CLIENT VISUAL PASS: auth, quota setting, over-limit UI, PID binding, persistence')
+                print('CLIENT VISUAL PASS: auth, quota, manual + auto assignment, persistence')
                 browser.close()
         finally:
             process.terminate()

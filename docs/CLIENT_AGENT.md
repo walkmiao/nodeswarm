@@ -1,4 +1,4 @@
-# Windows Client Agent: deployment, policy, and verification (v1.3)
+# Windows Client Agent: deployment, policy, and verification (v1.4)
 
 ## What it does
 
@@ -83,3 +83,9 @@ The CLI profile contains the SOCKS5 password; never distribute it as part of a p
 | `DELETE` | `/api/clients/{id}` | Admin | Revoke workstation registration |
 
 The Controller does not execute arbitrary commands on client workstations. Only an explicitly configured upstream ProxyBridge CLI can be spawned, with fixed command arguments and a generated profile.
+
+## One-click auto assignment (v1.4)
+
+An administrator can press **自动填充空位** in a Windows Client drawer to fill unassigned, currently observed PIDs up to that workstation’s effective quota. Controller selects available nodes by utilization ratio and capacity (including other workstations' reservations); it preserves all existing bindings and never silently migrates a live process. Conflicting manual edits must be saved first. The API is `POST /api/clients/{id}/auto-assign` with `{"expectedRevision":N}`. A successful response returns `added`, `total`, `maxProxyPids` and the updated `client`. The assignment is still a *planned* route, not independently verified transparent forwarding.
+
+The auto-assignment operation requires an online Agent and a fresh process inventory. It refuses stale policy revisions. Concurrent requests are serialized with manual assignments in the Registry lock. A last SOCKS5 probe marked `failed` excludes the node; nodes with unknown status may still be selected, so run a network probe before production allocation.
