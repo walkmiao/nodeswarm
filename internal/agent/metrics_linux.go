@@ -4,7 +4,7 @@ package agent
 
 import (
 	"bufio"
-	"nodeconsole.local/node-console/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/control"
 	"os"
 	"runtime"
 	"strconv"

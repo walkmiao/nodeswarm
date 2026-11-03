@@ -57,8 +57,23 @@ with sync_playwright() as p:
     qa.wait_for(state='detached',timeout=10000)
     page.locator('[data-page="settings"]').first.click()
     assert page.locator('.codebox').count()>=3
+    page.locator('[data-action="new-enrollment"]').click()
+    page.locator('#enroll-form').wait_for()
+    page.locator('#field-label').fill('Playwright-Bootstrap')
+    page.locator('#field-ttlMinutes').fill('15')
+    page.locator('[data-action="save-enrollment"]').click()
+    page.get_by_text('注册密钥已生成').wait_for()
+    assert page.locator('.overlay .codebox').count()==1
+    page.screenshot(path=str(ROOT.parent/'nodeswarm-grant.png'),animations='disabled')
+    page.locator('[data-action="close-overlay"]').last.click()
+    page.get_by_text('Playwright-Bootstrap').wait_for()
+    page.locator('[data-action="revoke-grant"]').click()
+    page.get_by_text('Playwright-Bootstrap').wait_for(state='detached')
+    page.locator('[data-page="alerts"]').first.click()
+    page.get_by_text('实时告警列表').wait_for()
+    page.screenshot(path=str(ROOT.parent/'nodeswarm-alerts.png'),animations='disabled')
     page.locator('[data-page="events"]').first.click()
     assert page.locator('.log-row').count()>=1
     assert not errors, errors
-    print('VISUAL PASS: login, overview, agents, agent drawer, nodes, node dialog, docs, events')
+    print('VISUAL PASS: login, overview, agents, UDP fields, node CRUD, enrollment grant issue/revoke, alerts, events')
     browser.close()

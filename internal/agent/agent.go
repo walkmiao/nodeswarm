@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"nodeconsole.local/node-console/internal/control"
-	"nodeconsole.local/node-console/internal/proxy"
+	"github.com/walkmiao/nodeswarm/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/proxy"
 )
 
 type Config struct {

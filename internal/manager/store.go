@@ -169,6 +169,18 @@ func (s *Store) eventLocked(level, msg string) {
 		s.events = s.events[len(s.events)-200:]
 	}
 }
+
+// RecordEvent adds an operator audit event to the persistent event stream.
+// Messages must not contain tokens, proxy credentials or HTTP request bodies.
+func (s *Store) RecordEvent(level, message string) error {
+	if len(message) > 360 {
+		message = message[:360]
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventLocked(level, message)
+	return s.saveLocked()
+}
 func randomID() string { b := make([]byte, 8); _, _ = rand.Read(b); return hex.EncodeToString(b) }
 func (s *Store) Snapshot() ([]Node, []Assignment, []Event) {
 	s.mu.Lock()

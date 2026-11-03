@@ -4,9 +4,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"nodeconsole.local/node-console/internal/control"
-	"nodeconsole.local/node-console/internal/manager"
 	"fmt"
+	"github.com/walkmiao/nodeswarm/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/manager"
+	"github.com/walkmiao/nodeswarm/internal/ops"
 	"net"
 	"net/http"
 	"regexp"
@@ -44,8 +45,39 @@ func (a *app) syncManaged(v control.AgentView) error {
 	return returnManaged()
 }
 func (a *app) agentsRoutes(mux *http.ServeMux) {
+	// One-time, expiry-bound enrollment credentials can be issued from the UI
+	// without distributing the long-lived shared enrollment secret.
+	mux.HandleFunc("GET /api/enrollments", func(w http.ResponseWriter, r *http.Request) {
+		send(w, 200, map[string]any{"enrollments": a.registry.ListEnrollments()})
+	})
+	mux.HandleFunc("POST /api/enrollments", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Label      string `json:"label"`
+			TTLMinutes int    `json:"ttlMinutes"`
+		}
+		if err := decode(r, &in); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		grant, token, err := a.registry.CreateEnrollment(in.Label, in.TTLMinutes)
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		_ = a.store.RecordEvent("info", "签发一次性 Agent 注册密钥："+grant.Label)
+		send(w, 201, map[string]any{"grant": grant, "token": token})
+	})
+	mux.HandleFunc("DELETE /api/enrollments/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.registry.RevokeEnrollment(r.PathValue("id")); err != nil {
+			fail(w, 404, err)
+			return
+		}
+		_ = a.store.RecordEvent("info", "撤销 Agent 一次性注册密钥："+r.PathValue("id"))
+		send(w, 200, map[string]any{"ok": true})
+	})
+
 	mux.HandleFunc("POST /api/agent/enroll", func(w http.ResponseWriter, r *http.Request) {
-		if a.registry == nil || a.enrollKey == "" || subtle.ConstantTimeCompare([]byte(bearer(r)), []byte(a.enrollKey)) != 1 {
+		if a.registry == nil || bearer(r) == "" {
 			fail(w, 401, errors.New("enrollment key rejected"))
 			return
 		}
@@ -54,11 +86,18 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 			fail(w, 400, err)
 			return
 		}
-		id, token, err := a.registry.Enroll(in, remoteIP(r))
+		var id, token string
+		var err error
+		if a.enrollKey != "" && subtle.ConstantTimeCompare([]byte(bearer(r)), []byte(a.enrollKey)) == 1 {
+			id, token, err = a.registry.Enroll(in, remoteIP(r))
+		} else {
+			id, token, err = a.registry.EnrollWithGrant(bearer(r), in, remoteIP(r))
+		}
 		if err != nil {
-			fail(w, 400, err)
+			fail(w, 401, errors.New("enrollment key rejected or agent name invalid"))
 			return
 		}
+		_ = a.store.RecordEvent("info", "新 Agent 注册："+in.Name+"（"+id+"）")
 		send(w, 201, map[string]any{"id": id, "token": token})
 	})
 	mux.HandleFunc("POST /api/agent/heartbeat", func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +120,49 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		nodes, assign, events := a.store.Snapshot()
 		agents := a.registry.List()
-		send(w, 200, map[string]any{"nodes": nodes, "assignments": assign, "events": events, "agents": agents, "proxyEngine": "client_transparent_proxy_not_integrated", "serverTime": time.Now().UTC().Format(time.RFC3339)})
+		alerts, count := a.alerts.List(ops.Evaluate(agents, nodes, time.Now()), time.Now())
+		send(w, 200, map[string]any{"nodes": nodes, "assignments": assign, "events": events, "agents": agents, "alerts": alerts, "activeAlerts": count, "enrollments": a.registry.ListEnrollments(), "proxyEngine": "client_transparent_proxy_not_integrated", "serverTime": time.Now().UTC().Format(time.RFC3339)})
+	})
+	mux.HandleFunc("GET /api/alerts", func(w http.ResponseWriter, r *http.Request) {
+		nodes, _, _ := a.store.Snapshot()
+		alerts, count := a.alerts.List(ops.Evaluate(a.registry.List(), nodes, time.Now()), time.Now())
+		send(w, 200, map[string]any{"alerts": alerts, "active": count})
+	})
+	mux.HandleFunc("POST /api/alerts/mute", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			ID    string `json:"id"`
+			Hours int    `json:"hours"`
+		}
+		if err := decode(r, &in); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		nodes, _, _ := a.store.Snapshot()
+		found := false
+		for _, alert := range ops.Evaluate(a.registry.List(), nodes, time.Now()) {
+			if alert.ID == in.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fail(w, 404, errors.New("alert no longer active"))
+			return
+		}
+		if err := a.alerts.Mute(in.ID, in.Hours); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		_ = a.store.RecordEvent("info", "静音告警 "+in.ID)
+		send(w, 200, map[string]any{"ok": true})
+	})
+	mux.HandleFunc("DELETE /api/alerts/mute/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.alerts.Unmute(r.PathValue("id")); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		_ = a.store.RecordEvent("info", "恢复告警 "+r.PathValue("id"))
+		send(w, 200, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, r *http.Request) {
 		send(w, 200, map[string]any{"agents": a.registry.List()})
@@ -109,6 +190,7 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 			fail(w, 500, fmt.Errorf("agent saved but proxy inventory sync failed: %w", err))
 			return
 		}
+		_ = a.store.RecordEvent("info", fmt.Sprintf("配置 Agent %s，待确认修订 %d", v.Name, v.Revision))
 		send(w, 200, v)
 	})
 	mux.HandleFunc("POST /api/agents/{id}/action", func(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +210,7 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 			fail(w, 500, err)
 			return
 		}
+		_ = a.store.RecordEvent("info", fmt.Sprintf("远程 %s Agent %s，待确认修订 %d", in.Action, v.Name, v.Revision))
 		send(w, 200, v)
 	})
 	mux.HandleFunc("POST /api/agents/batch", func(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +240,7 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 			}
 			results = append(results, map[string]string{"id": id, "status": status, "detail": detail})
 		}
+		_ = a.store.RecordEvent("info", fmt.Sprintf("批量操作 %s：共 %d 台 Agent", in.Action, len(in.IDs)))
 		send(w, 200, map[string]any{"results": results})
 	})
 	mux.HandleFunc("DELETE /api/agents/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +258,7 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 			return
 		}
 		_ = a.store.DeleteManaged(v.ID)
+		_ = a.store.RecordEvent("warning", "注销 Agent："+v.Name)
 		send(w, 200, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /api/agents/{id}/profile", func(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/binary"
@@ -12,12 +13,11 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"nodeconsole.local/node-console/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/control"
 )
 
 type Server struct {
@@ -35,6 +35,8 @@ type Server struct {
 	started string
 	sem     chan struct{}
 	allowed []*net.IPNet
+	udpMu   sync.Mutex
+	udpUsed map[int]struct{}
 }
 
 type Service struct {
@@ -123,7 +125,7 @@ func Start(c control.ProxyConfig) (*Server, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &Server{cfg: c, ln: ln, cancel: cancel, ctx: ctx, conns: map[net.Conn]struct{}{}, sem: make(chan struct{}, c.MaxConnections), allowed: nets, started: time.Now().UTC().Format(time.RFC3339)}
+	p := &Server{cfg: c, ln: ln, cancel: cancel, ctx: ctx, conns: map[net.Conn]struct{}{}, sem: make(chan struct{}, c.MaxConnections), allowed: nets, udpUsed: make(map[int]struct{}), started: time.Now().UTC().Format(time.RFC3339)}
 	p.wg.Add(1)
 	go p.accept()
 	return p, nil
@@ -475,7 +477,7 @@ func parseUDP(dat []byte) (string, int, []byte, error) {
 	if len(dat) < 7 || dat[0] != 0 || dat[1] != 0 || dat[2] != 0 {
 		return "", 0, nil, errors.New("unsupported fragmented UDP")
 	}
-	_, host, port, e := readTarget(strings.NewReader(string(dat[3:])))
+	_, host, port, e := readTarget(bytes.NewReader(dat[3:]))
 	if e != nil {
 		return "", 0, nil, e
 	}
@@ -496,18 +498,75 @@ func parseUDP(dat []byte) (string, int, []byte, error) {
 	}
 	return host, port, dat[off:], nil
 }
-func (p *Server) associateUDP(c net.Conn) {
-	local := c.LocalAddr().(*net.TCPAddr).IP
-	if local == nil || local.IsUnspecified() {
-		local = net.IPv4zero
+
+// openUDPRelay acquires a dedicated port for one authenticated UDP ASSOCIATE
+// session. A bounded pool is useful for cloud security groups / firewalls.
+// An empty pool retains ephemeral OS-assigned UDP ports for backward compatibility.
+func (p *Server) openUDPRelay() (*net.UDPConn, func(), error) {
+	listenIP := net.ParseIP(p.cfg.Listen)
+	if listenIP == nil {
+		listenIP = net.IPv4zero
 	}
-	sock, e := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	if p.cfg.UDPPortStart == 0 {
+		sock, err := net.ListenUDP("udp", &net.UDPAddr{IP: listenIP, Port: 0})
+		return sock, func() {}, err
+	}
+	p.udpMu.Lock()
+	defer p.udpMu.Unlock()
+	for port := p.cfg.UDPPortStart; port <= p.cfg.UDPPortEnd; port++ {
+		if _, exists := p.udpUsed[port]; exists {
+			continue
+		}
+		sock, err := net.ListenUDP("udp", &net.UDPAddr{IP: listenIP, Port: port})
+		if err != nil {
+			continue
+		}
+		p.udpUsed[port] = struct{}{}
+		return sock, func() {
+			p.udpMu.Lock()
+			delete(p.udpUsed, port)
+			p.udpMu.Unlock()
+		}, nil
+	}
+	return nil, nil, errors.New("UDP relay pool exhausted or ports unavailable")
+}
+
+// SOCKS5 UDP BND.ADDR must be reachable by the client. On a cloud VM the
+// socket's local IP is often RFC1918 behind NAT, so advertise PublicHost when
+// configured. RFC1928 permits an IPv4, IPv6 or a DNS-name reply.
+func writeUDPAssociateReply(c net.Conn, publicHost string, port int) error {
+	host := publicHost
+	if host == "" {
+		if local, ok := c.LocalAddr().(*net.TCPAddr); ok {
+			host = local.IP.String()
+		}
+	}
+	var reply []byte
+	if ip := net.ParseIP(host); ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			reply = append([]byte{5, 0, 0, 1}, v4...)
+		} else {
+			reply = append([]byte{5, 0, 0, 4}, ip.To16()...)
+		}
+	} else if host != "" && len(host) <= 255 {
+		reply = append([]byte{5, 0, 0, 3, byte(len(host))}, []byte(host)...)
+	} else {
+		reply = []byte{5, 0, 0, 1, 0, 0, 0, 0}
+	}
+	reply = append(reply, byte(port>>8), byte(port))
+	_, err := c.Write(reply)
+	return err
+}
+
+func (p *Server) associateUDP(c net.Conn) {
+	sock, release, e := p.openUDPRelay()
 	if e != nil {
 		_ = writeReply(c, 1, nil)
 		return
 	}
 	defer sock.Close()
-	if e = writeReply(c, 0, &net.UDPAddr{IP: local, Port: sock.LocalAddr().(*net.UDPAddr).Port}); e != nil {
+	defer release()
+	if e = writeUDPAssociateReply(c, p.cfg.PublicHost, sock.LocalAddr().(*net.UDPAddr).Port); e != nil {
 		return
 	}
 	_ = c.SetDeadline(time.Time{})

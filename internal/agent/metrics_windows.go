@@ -3,7 +3,7 @@
 package agent
 
 import (
-	"nodeconsole.local/node-console/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/control"
 	"runtime"
 	"syscall"
 	"unsafe"

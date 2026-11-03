@@ -1,0 +1,16 @@
+# Linux cloud VM only. Use a private, permission-restricted agent.env file.
+# The host security group must allow the selected TCP and bounded UDP ports.
+services:
+  agent:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - ./agent.env
+    volumes:
+      - agent-data:/data
+    command: ["-mode", "agent"]
+volumes:
+  agent-data:

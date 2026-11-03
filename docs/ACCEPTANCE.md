@@ -1,4 +1,20 @@
-# Node Console v1.0 验收记录（2026-11-02）
+# NodeSwarm v1.1 Acceptance Summary (2026-11-03)
+
+- [x] Go unit tests, race detector, and `go vet`.
+- [x] One-time Agent enrollment token issue, expiry, one-use race, revoke, persistence, and replay prevention.
+- [x] SOCKS5 TCP with username/password, bounded UDP port allocation/reuse and public bind address encoding.
+- [x] Controller + Agent end-to-end: enroll, heartbeat, configure, start, stop, restart, UDP ASSOCIATE.
+- [x] Node inventory batch health checks including authenticated SOCKS5 credentials.
+- [x] Alerts (offline, runtime, configuration drift, CPU/memory, expiry), persisted mute/unmute.
+- [x] Web browser interaction: node create/edit/delete, enrollment issue/revoke, alerts, UDP settings.
+- [x] Cross-compile Linux amd64, Linux arm64, Windows amd64.
+- [ ] Public VPS TCP/UDP end-to-end validation with NAT/firewall; real Windows host installation and uptime.
+- [ ] Windows same-process-name, different-PID transparent routing; current export is application-name-only.
+- [ ] Multi-user RBAC/HA and automated Agent updates.
+
+## Prior v1.0 baseline acceptance
+
+# NodeSwarm v1.0 验收记录（2026-11-02）
 
 ## 已通过：源码和本机联调
 

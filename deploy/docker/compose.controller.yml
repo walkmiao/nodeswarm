@@ -1,0 +1,15 @@
+# Linux host only. Caddy/Nginx on the host must provide HTTPS; 8088 stays local.
+services:
+  controller:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      NODE_MANAGER_DATA: /data
+    volumes:
+      - controller-data:/data
+    command: ["-mode", "controller"]
+volumes:
+  controller-data:

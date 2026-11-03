@@ -8,10 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"nodeconsole.local/node-console/internal/agent"
-	"nodeconsole.local/node-console/internal/control"
 	"flag"
 	"fmt"
+	"github.com/walkmiao/nodeswarm/internal/agent"
+	"github.com/walkmiao/nodeswarm/internal/control"
 	"io"
 	"io/fs"
 	"log"
@@ -22,10 +22,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
-	"nodeconsole.local/node-console/internal/manager"
+	"github.com/walkmiao/nodeswarm/internal/manager"
+	"github.com/walkmiao/nodeswarm/internal/monitor"
+	"github.com/walkmiao/nodeswarm/internal/ops"
 )
 
 //go:embed web/*
@@ -34,6 +37,7 @@ var assets embed.FS
 type app struct {
 	store      *manager.Store
 	registry   *control.Registry
+	alerts     *ops.Store
 	adminToken string
 	enrollKey  string
 }
@@ -64,7 +68,7 @@ func decode(r *http.Request, out any) error {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		send(w, 200, map[string]any{"status": "ok", "mode": "controller", "version": "1.0.0"})
+		send(w, 200, map[string]any{"status": "ok", "mode": "controller", "version": "1.1.0"})
 	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		nodes, as, ev := a.store.Snapshot()
@@ -145,6 +149,62 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		send(w, 200, map[string]any{"imported": count, "skipped": len(inputs) - count})
+	})
+	// Bounded concurrent probes prevent one slow external proxy from freezing
+	// the controller API or exhausting sockets.
+	mux.HandleFunc("POST /api/nodes/probe-batch", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			IDs []string `json:"ids"`
+		}
+		if err := decode(r, &in); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		nodes, _, _ := a.store.Snapshot()
+		wanted := make(map[string]bool, len(in.IDs))
+		for _, id := range in.IDs {
+			wanted[id] = true
+		}
+		var selected []manager.Node
+		for _, n := range nodes {
+			if len(in.IDs) == 0 || wanted[n.ID] {
+				selected = append(selected, n)
+			}
+		}
+		if len(selected) > 32 || len(in.IDs) > 32 {
+			fail(w, 400, errors.New("一次最多检测 32 个节点"))
+			return
+		}
+		type item struct {
+			ID    string        `json:"id"`
+			Name  string        `json:"name"`
+			Probe manager.Probe `json:"probe"`
+			Error string        `json:"error,omitempty"`
+		}
+		results := make([]item, len(selected))
+		sem := make(chan struct{}, 8)
+		var wg sync.WaitGroup
+		for i, n := range selected {
+			i, n := i, n
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				source, exists := a.store.NodeByID(n.ID)
+				if !exists {
+					results[i] = item{ID: n.ID, Name: n.Name, Error: "node was deleted"}
+					return
+				}
+				probe := manager.ProbeSOCKS5(source, 4*time.Second)
+				results[i] = item{ID: n.ID, Name: n.Name, Probe: probe}
+				if err := a.store.SaveProbe(n.ID, probe); err != nil {
+					results[i].Error = err.Error()
+				}
+			}()
+		}
+		wg.Wait()
+		send(w, 200, map[string]any{"results": results, "count": len(results)})
 	})
 	mux.HandleFunc("POST /api/nodes/{id}/probe", func(w http.ResponseWriter, r *http.Request) {
 		n, ok := a.store.NodeByID(r.PathValue("id"))
@@ -324,6 +384,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	alerts, err := ops.Open(dataDir)
+	if err != nil {
+		log.Fatal(err)
+	}
 	adminToken, err := readOrCreateSecret(dataDir, "admin.token", "NODE_MANAGER_ADMIN_TOKEN")
 	if err != nil {
 		log.Fatal(err)
@@ -354,10 +418,11 @@ func main() {
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && os.Getenv("NODE_MANAGER_ALLOW_PUBLIC_LISTEN") != "1" {
 		log.Fatal("refusing public HTTP binding; use Caddy/Nginx HTTPS reverse proxy to 127.0.0.1:8088, or explicitly set NODE_MANAGER_ALLOW_PUBLIC_LISTEN=1 for secure private networks")
 	}
-	fmt.Printf("Node Console v1: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
-	srv := &http.Server{Addr: addr, Handler: (&app{store: store, registry: registry, adminToken: adminToken, enrollKey: enrollKey}).routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 75 * time.Second}
+	fmt.Printf("NodeSwarm v1.1: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
+	srv := &http.Server{Addr: addr, Handler: (&app{store: store, registry: registry, alerts: alerts, adminToken: adminToken, enrollKey: enrollKey}).routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 75 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go monitor.Run(ctx, store)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

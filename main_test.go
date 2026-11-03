@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"nodeconsole.local/node-console/internal/manager"
+	"github.com/walkmiao/nodeswarm/internal/manager"
 	"net/http"
 	"net/http/httptest"
 	"strings"

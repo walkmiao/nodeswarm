@@ -21,7 +21,7 @@
 4. Agent 连接后先在界面确认在线和版本，填写**实际对外地址**，选择监听端口，生成或输入足够强的 SOCKS5 账号密码。
 5. 在 Agent 页面启用代理。注意“已下发”只是目标状态；观察实际 `runtime.status=running` 且 `runtime.revision=revision`，再开放云安全组中的代理端口。
 6. 将 `allowedCidrs` 设成实际客户端公网出口地址（示例：`198.51.100.4/32` 仅作格式说明，不可用作真实公网 IP）；生产建议配合云安全组限制。留空为不限制来源 IP，但仍强制 SOCKS5 账号认证，不推荐。
-7. 如果不需要 UDP，关闭 UDP 选项。需要时先在内网验证，再检查云防火墙是否允许服务器动态 UDP 中继端口从指定客户端访问。
+7. For UDP on VPS: prefer a fixed `udpPortStart` to `udpPortEnd` range (max 128 ports); allow the selected UDP range from trusted client IPs in both provider security group and host firewall. Without this configuration, the relay uses dynamically allocated UDP ports.
 8. 从代理节点池点击“检测”验证 TCP SOCKS5；再用自己控制的实际应用测试 TCP/UDP 业务。检测成功不能替代公网出口真实性检查。
 
 ## 排障
@@ -33,7 +33,7 @@
 | Controller 页面无法登录 | 使用 `admin.token` 而非 `enroll.token`；检查浏览器 URL/反代 HTTPS/令牌剪贴空格 |
 | SOCKS5 从公网连接失败 | 确认运行中，监听为 `0.0.0.0` 或正确网卡 IP，云防火墙 TCP 入站，服务器安全组、Allowed CIDR、认证密码 |
 | TCP 检测成功但应用不可用 | 认证、目标端口、目标 DNS、客户端是否真的配置代理，是否被上游应用规则限制；TCP 检测不验证 UDP |
-| UDP 协商成功但 UDP 数据不通 | SOCKS5 ASSOCIATE 使用动态 UDP 端口。检查云防火墙/NAT 的 UDP 回程与入站、目标 UDP 服务、客户端报文封装 |
+| UDP ASSOCIATE succeeds but packets fail | Verify bounded relay UDP port pool and firewall/NAT mapping, publicHost BND address, client UDP source restrictions and target UDP protocol; TCP handshake alone is not UDP data-path validation |
 | Agent 离线后代理自动消失 | 安全策略：控制端失联超过 10 分钟后自动停止；修复连接后，代理按目标配置恢复 |
 | 主控重启后配置丢失 | 检查 `NODE_MANAGER_DATA` 是否改变以及存储文件所属用户；备份/恢复需要同时保留 `registry.key`、节点密钥及数据文件 |
 | 改名/改 IP 后多次注册 | 绑定凭据位于 Agent 数据目录的 `agent.json`；不要复制到另一台主机；重新部署时保留本机数据目录 |

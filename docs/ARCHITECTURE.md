@@ -1,4 +1,4 @@
-# Node Console v1.0 架构与控制边界
+# NodeSwarm v1.1 架构与控制边界
 
 ## 拓扑
 
@@ -60,10 +60,14 @@
 | POST | `/api/agent/heartbeat` | Agent Token | 上报指标/运行状态与拉取配置 |
 | GET | `/api/state` | Admin | 代理节点和本机规划状态 |
 | POST | `/api/nodes/{id}/probe` | Admin | 测试 TCP SOCKS5 CONNECT |
+| POST | `/api/nodes/probe-batch` | Admin | 有并发上限的批量探测（最多32个） |
+| GET / POST / DELETE | `/api/enrollments` | Admin | 一次性密钥列表/签发/撤销（DELETE 含 id） |
+| GET | `/api/alerts` | Admin | 实时健康告警 |
+| POST / DELETE | `/api/alerts/mute` | Admin | 临时静音与恢复 |
 
 ## 未实现且不应误解的能力
 
 - 此 Agent 是**云端 SOCKS5 服务端**，不是 Windows 游戏进程的透明代理客户端。
 - 导出 ProxyBridge `.pbprofile` 只有应用名规则，不能将同一 `Client.exe` 的不同 PID 分配到不同出口。
-- UDP ASSOCIATE 中继采用动态端口，公网使用前需要协调云安全组、NAT；目前未完成跨公网 UDP 端到端验收。
+- UDP ASSOCIATE 已支持固定端口池和公网 BND 地址通告；当前仅完成本机联调，尚未进行真实云公网 UDP 数据包往返验收。
 - 目前没有 RBAC、二次认证、分布式协调/HA、节点自动更新或可执行代码分发能力。不要将其当作可任意远程操控主机的 RMM 平台。

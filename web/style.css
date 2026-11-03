@@ -17,3 +17,17 @@
 @media(max-width:1300px){.sidebar{width:218px;flex-basis:218px}.page-content{padding:28px 26px 58px}.topbar{padding:0 26px}.dash-grid{grid-template-columns:minmax(0,1.45fr) minmax(280px,1fr)}.metric-grid{gap:12px}}
 @media(max-width:1090px){.dash-grid{grid-template-columns:1fr}.section-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sidebar{width:205px;flex-basis:205px}.nav-item{font-size:12px}.page-content{padding:25px 23px 50px}}
 @media(max-width:760px){.shell{display:block}.sidebar{position:fixed;inset:0 auto 0 0;width:246px;transform:translateX(-105%);transition:transform .2s;box-shadow:6px 0 40px rgba(15,23,42,.3)}.shell.nav-open .sidebar{transform:translateX(0)}.topbar{height:58px;padding:0 15px}.mobile-top{display:inline-flex}.top-pill{display:none}.top-actions{gap:7px}.page-content{padding:23px 15px 50px}.page-heading{align-items:flex-start;flex-direction:column;gap:17px;margin-bottom:19px}h1{font-size:23px}.heading-actions{width:100%}.metric-grid{gap:10px}.metric-card{padding:14px;min-height:120px}.metric-value{font-size:25px}.metric-top{font-size:10px}.metric-icon{width:28px;height:28px}.metric-icon .lucide{width:15px}.card-head{padding:16px}.card-body{padding:16px}.toolbar{padding:12px}.search-wrap input{width:195px}.login-wrap{display:block}.login-left{min-height:220px;padding:32px 24px}.login-pitch h1{font-size:26px;margin-top:24px}.login-pitch p{font-size:12px;margin-top:10px}.login-feature,.login-legal{display:none}.login-right{padding:38px 22px}.drawer-content,.drawer-head,.drawer-actions{padding-left:18px;padding-right:18px}.field-grid{grid-template-columns:1fr}.field-span{grid-column:1}.dialog-body{padding:18px}.dialog-footer{padding:15px}.page-footer{font-size:9px}}
+/* v1.1 readability pass: consistent data density without changing layout. */
+body{font-size:14px}
+th{font-size:11px;letter-spacing:.12px}
+td{font-size:13px;line-height:1.45}
+.table-primary .name{font-size:13px}
+.table-primary .description{font-size:11px}
+.mono-muted{font-size:11px}
+.drawer-kv{font-size:12px}
+.log-row strong,.log-row time{font-size:12px}
+.card-head p,.page-heading p,.insight p,.view-aside p{font-size:12px}
+.modal-notice,.inline-msg,.dialog-head p{font-size:12px}
+.tag,.table-actions .btn{font-size:11px}
+.nav-item .nav-badge{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
-	"nodeconsole.local/node-console/internal/control"
-	"nodeconsole.local/node-console/internal/manager"
+	"github.com/walkmiao/nodeswarm/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/manager"
 	"strings"
 	"testing"
 )

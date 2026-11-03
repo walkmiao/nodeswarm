@@ -1,50 +1,70 @@
-"""End-to-end HTTP smoke test; requires a built ./nodemgr binary. No external Python dependencies."""
+#!/usr/bin/env python3
+"""Run real Controller API smoke tests with an ephemeral data directory.
+
+No third-party dependencies. Provide NODE_CONSOLE_TEST_BIN to use an existing
+binary, or the script builds one in the temporary directory using Go.
+"""
 import json
 import os
-from pathlib import Path
+import pathlib
 import socket
 import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / 'nodemgr'
-if not BIN.is_file():
-    raise SystemExit('First run: go build -o nodemgr .')
-with socket.socket() as sock:
-    sock.bind(('127.0.0.1', 0))
-    port=sock.getsockname()[1]
-base=f'http://127.0.0.1:{port}'
-def request(path, data=None, method=None):
-    body=None if data is None else json.dumps(data).encode('utf-8')
-    req=urllib.request.Request(base+path,data=body,method=method,headers={'Content-Type':'application/json'} if body else {})
-    with urllib.request.urlopen(req,timeout=5) as res:
-        if path == '/': return res.read().decode()
-        return json.load(res)
-with tempfile.TemporaryDirectory() as d:
-    env=dict(os.environ,NODE_MANAGER_PORT=str(port),NODE_MANAGER_DATA=d)
-    p=subprocess.Popen([str(BIN)],env=env,cwd=str(ROOT),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+
+
+def query(base,path,method='GET',token='',data=None):
+    payload=json.dumps(data).encode() if data is not None else None
+    request=urllib.request.Request(base+path,data=payload,method=method,
+         headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
     try:
-        for _ in range(30):
-            try:
-                health=request('/api/health')
-                break
-            except Exception:
-                time.sleep(0.1)
-        else:raise RuntimeError('server did not start')
-        assert health['proxyEngine']=='not_integrated'
-        assert '<title>Node Console' in request('/')
-        node=request('/api/nodes',{'name':'smoke','host':'127.0.0.1','port':1080,'capacity':1},'POST')
-        assert node['name']=='smoke'
-        state=request('/api/state')
-        assert len(state['nodes'])==1
-        assert 'password' not in state['nodes'][0]
-        assert isinstance(request('/api/processes')['processes'],list)
-        request('/api/nodes/'+node['id'],method='DELETE')
-        assert request('/api/state')['nodes']==[]
-        print('HTTP smoke PASS: health, static UI, node CRUD, process API')
-    finally:
-        p.terminate()
-        try:p.wait(timeout=3)
-        except subprocess.TimeoutExpired:p.kill()
+        with urllib.request.urlopen(request,timeout=5) as r:
+            return r.status,json.loads(r.read())
+    except urllib.error.HTTPError as err:
+        return err.code,json.loads(err.read())
+
+
+def run():
+    with tempfile.TemporaryDirectory(prefix='nodeswarm-api-') as d:
+        d=pathlib.Path(d)
+        binary=os.environ.get('NODE_CONSOLE_TEST_BIN')
+        if not binary:
+            binary=str(d/'nodeswarm')
+            subprocess.run(['go','build','-o',binary,'.'],cwd=ROOT,check=True)
+        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1',0));port=s.getsockname()[1]
+        url=f'http://127.0.0.1:{port}'
+        env={**os.environ,'NODE_MANAGER_DATA':str(d/'data')}
+        proc=subprocess.Popen([binary,'-mode','controller','-listen',f'127.0.0.1:{port}'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(50):
+                try:
+                    if query(url,'/api/health')[0]==200:break
+                except Exception:
+                    time.sleep(.1)
+            else:raise AssertionError('controller not ready')
+            token=(d/'data'/'admin.token').read_text().strip()
+            assert query(url,'/api/dashboard')[0]==401
+            assert query(url,'/api/dashboard',token=token)[0]==200
+            status,enroll=query(url,'/api/enrollments','POST',token,{'label':'Smoke','ttlMinutes':10})
+            assert status==201 and len(enroll['token'])>40
+            status,node=query(url,'/api/nodes','POST',token,{'name':'smoke','host':'127.0.0.1','port':50000,'capacity':2})
+            assert status==201,node
+            status,data=query(url,'/api/dashboard',token=token)
+            assert status==200 and len(data['nodes'])==1
+            assert len(data['enrollments'])==1 and enroll['token'] not in json.dumps(data)
+            assert 'alerts' in data and isinstance(data['alerts'],list)
+            status,_=query(url,'/api/nodes/'+node['id'],'DELETE',token)
+            assert status==200
+            assert query(url,'/api/dashboard',token=token)[1]['nodes']==[]
+            print('API PASS: authentication, one-time grant issuance, node create/delete, alerts dashboard')
+        finally:
+            proc.terminate()
+            try:proc.wait(timeout=4)
+            except subprocess.TimeoutExpired:proc.kill()
+
+if __name__=='__main__':run()

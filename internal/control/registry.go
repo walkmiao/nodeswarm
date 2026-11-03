@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const AgentVersion = "1.0.0"
+const AgentVersion = "1.1.0"
 
 type ProxyConfig struct {
 	Enabled        bool     `json:"enabled"`
@@ -31,6 +31,8 @@ type ProxyConfig struct {
 	Password       string   `json:"password,omitempty"`
 	HasPassword    bool     `json:"hasPassword"`
 	UDP            bool     `json:"udp"`
+	UDPPortStart   int      `json:"udpPortStart"`
+	UDPPortEnd     int      `json:"udpPortEnd"`
 	MaxConnections int      `json:"maxConnections"`
 	Capacity       int      `json:"capacity"`
 	Provider       string   `json:"provider"`
@@ -72,6 +74,7 @@ type AgentView struct {
 	ObservedIP   string       `json:"observedIp"`
 	Status       string       `json:"status"`
 	RegisteredAt string       `json:"registeredAt"`
+	DesiredAt    string       `json:"desiredAt,omitempty"`
 	LastSeen     string       `json:"lastSeen"`
 	LastError    string       `json:"lastError"`
 	Desired      ProxyConfig  `json:"desired"`
@@ -113,15 +116,27 @@ type agentDisk struct {
 	TokenHash string `json:"tokenHash"`
 	Secret    string `json:"secret,omitempty"`
 }
+type EnrollmentGrant struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	ExpiresAt string `json:"expiresAt"`
+	CreatedAt string `json:"createdAt"`
+}
+type enrollmentDisk struct {
+	EnrollmentGrant
+	TokenHash string `json:"tokenHash"`
+}
 type disk struct {
-	Agents []agentDisk `json:"agents"`
+	Agents      []agentDisk      `json:"agents"`
+	Enrollments []enrollmentDisk `json:"enrollments,omitempty"`
 }
 type Registry struct {
-	mu        sync.Mutex
-	path      string
-	key       []byte
-	agents    []agentDisk
-	lastSaved time.Time
+	mu          sync.Mutex
+	path        string
+	key         []byte
+	agents      []agentDisk
+	enrollments []enrollmentDisk
+	lastSaved   time.Time
 }
 
 func NewRegistry(dir string) (*Registry, error) {
@@ -157,6 +172,7 @@ func NewRegistry(dir string) (*Registry, error) {
 		return nil, err
 	}
 	s.agents = d.Agents
+	s.enrollments = d.Enrollments
 	for i := range s.agents {
 		if s.agents[i].Secret != "" {
 			p, e := unseal(key, s.agents[i].Secret)
@@ -212,7 +228,7 @@ func unseal(key []byte, coded string) (string, error) {
 	return string(v), e
 }
 func (s *Registry) saveLocked() error {
-	d := disk{Agents: make([]agentDisk, 0, len(s.agents))}
+	d := disk{Agents: make([]agentDisk, 0, len(s.agents)), Enrollments: slices.Clone(s.enrollments)}
 	for _, a := range s.agents {
 		v := a
 		v.Desired.Password = ""
@@ -307,12 +323,10 @@ func clean(v string, n int) string {
 	}
 	return v
 }
-func (s *Registry) Enroll(in EnrollInput, observed string) (string, string, error) {
-	if strings.TrimSpace(in.Name) == "" {
-		return "", "", errors.New("agent name required")
+func (s *Registry) enrollLocked(in EnrollInput, observed string) (string, string, error) {
+	if strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
+		return "", "", errors.New("agent name required (max 80 chars)")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	id := randomHex(12)
 	token := randomHex(32)
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -324,6 +338,94 @@ func (s *Registry) Enroll(in EnrollInput, observed string) (string, string, erro
 	}
 	return id, token, nil
 }
+
+// Enroll is retained for administrators using the original shared enrollment secret.
+func (s *Registry) Enroll(in EnrollInput, observed string) (string, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.enrollLocked(in, observed)
+}
+
+// CreateEnrollment issues a limited-life, single-use agent bootstrap key. The
+// raw secret is returned once, while only its SHA-256 hash is stored.
+func (s *Registry) CreateEnrollment(label string, ttlMinutes int) (EnrollmentGrant, string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" || len(label) > 80 || ttlMinutes < 1 || ttlMinutes > 1440 {
+		return EnrollmentGrant{}, "", errors.New("label required and ttlMinutes must be 1-1440")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous := slices.Clone(s.enrollments)
+	now := time.Now().UTC()
+	s.enrollments = slices.DeleteFunc(s.enrollments, func(g enrollmentDisk) bool {
+		exp, err := time.Parse(time.RFC3339, g.ExpiresAt)
+		return err != nil || !now.Before(exp)
+	})
+	if len(s.enrollments) >= 100 {
+		s.enrollments = previous
+		return EnrollmentGrant{}, "", errors.New("enrollment grant limit reached; revoke unused grants")
+	}
+	grant := EnrollmentGrant{ID: randomHex(10), Label: label, CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(time.Duration(ttlMinutes) * time.Minute).Format(time.RFC3339)}
+	token := randomHex(32)
+	s.enrollments = append(s.enrollments, enrollmentDisk{EnrollmentGrant: grant, TokenHash: SHA(token)})
+	if err := s.saveLocked(); err != nil {
+		s.enrollments = previous
+		return EnrollmentGrant{}, "", err
+	}
+	return grant, token, nil
+}
+func (s *Registry) ListEnrollments() []EnrollmentGrant {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]EnrollmentGrant, 0, len(s.enrollments))
+	for _, g := range s.enrollments {
+		out = append(out, g.EnrollmentGrant)
+	}
+	return out
+}
+func (s *Registry) RevokeEnrollment(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, g := range s.enrollments {
+		if g.ID == id {
+			before := slices.Clone(s.enrollments)
+			s.enrollments = slices.Delete(s.enrollments, i, i+1)
+			if err := s.saveLocked(); err != nil {
+				s.enrollments = before
+				return err
+			}
+			return nil
+		}
+	}
+	return errors.New("enrollment grant not found")
+}
+func (s *Registry) EnrollWithGrant(token string, in EnrollInput, observed string) (string, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token == "" || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
+		return "", "", errors.New("invalid enrollment key or agent name")
+	}
+	hash := SHA(token)
+	now := time.Now()
+	for i, g := range s.enrollments {
+		expires, e := time.Parse(time.RFC3339, g.ExpiresAt)
+		if e != nil || now.After(expires) {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(hash), []byte(g.TokenHash)) != 1 {
+			continue
+		}
+		old := slices.Clone(s.enrollments)
+		s.enrollments = slices.Delete(s.enrollments, i, i+1)
+		id, agentToken, err := s.enrollLocked(in, observed)
+		if err != nil {
+			s.enrollments = old
+		}
+		return id, agentToken, err
+	}
+	return "", "", errors.New("enrollment key invalid, expired or already used")
+}
+
 func (s *Registry) Authorize(id, token string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -392,6 +494,12 @@ func ValidateConfig(c ProxyConfig) error {
 	if c.PublicHost != "" && net.ParseIP(c.PublicHost) == nil && !hostnameRE.MatchString(c.PublicHost) {
 		return errors.New("invalid public host")
 	}
+	if (c.UDPPortStart == 0) != (c.UDPPortEnd == 0) {
+		return errors.New("UDP 端口池需同时设置起始和结束端口")
+	}
+	if c.UDPPortStart != 0 && (c.UDPPortStart < 1024 || c.UDPPortEnd > 65535 || c.UDPPortEnd < c.UDPPortStart || c.UDPPortEnd-c.UDPPortStart+1 > 128) {
+		return errors.New("UDP 端口池须在 1024-65535 范围内，且最多 128 个端口")
+	}
 	if c.MaxConnections < 1 || c.MaxConnections > 4000 {
 		return errors.New("maxConnections must be 1-4000")
 	}
@@ -457,6 +565,7 @@ func (s *Registry) Configure(id string, in ConfigureInput) (AgentView, error) {
 		a.Desired = c
 		a.Desired.HasPassword = true
 		a.Revision++
+		a.DesiredAt = time.Now().UTC().Format(time.RFC3339)
 		if err := s.saveLocked(); err != nil {
 			*a = before
 			return AgentView{}, err
@@ -490,6 +599,7 @@ func (s *Registry) Action(id, action string) (AgentView, error) {
 			return AgentView{}, errors.New("unknown action")
 		}
 		a.Revision++
+		a.DesiredAt = time.Now().UTC().Format(time.RFC3339)
 		if err := s.saveLocked(); err != nil {
 			*a = before
 			return AgentView{}, err
