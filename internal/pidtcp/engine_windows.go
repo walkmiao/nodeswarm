@@ -76,6 +76,7 @@ func runWindows(ctx context.Context, routes []Route, driverDir string, ready cha
 		default:
 		}
 	}
+	router.onSendError = func(err error) { fail(fmt.Errorf("WinDivert packet injection failed: %w", err)) }
 	var handlerWG, acceptWG sync.WaitGroup
 	for _, listener := range []net.Listener{r4, r6} {
 		acceptWG.Add(1)

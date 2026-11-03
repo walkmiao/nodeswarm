@@ -34,41 +34,48 @@ type synDecision struct {
 // router delays a new SYN for an ownership lookup. Existing NAT flows always
 // get precedence, so policy refreshes cannot redirect half a live connection.
 type router struct {
-	mu      sync.Mutex
-	io      PacketIO
-	table   *flowTable
-	owner   ownerFunc
-	pending map[flowKey]*pendingPacket
-	direct  map[flowKey]synDecision
-	jobs    chan *pendingPacket
-	stopped bool
+	mu          sync.Mutex
+	io          PacketIO
+	table       *flowTable
+	owner       ownerFunc
+	pending     map[flowKey]*pendingPacket
+	direct      map[flowKey]synDecision
+	jobs        chan *pendingPacket
+	stopped     bool
+	nextSweep   time.Time
+	onSendError func(error) // supplied by engine; abort on packet injection failure
 }
 
 func newRouter(io PacketIO, table *flowTable, owner ownerFunc) *router {
 	return &router{io: io, table: table, owner: owner, pending: map[flowKey]*pendingPacket{}, direct: map[flowKey]synDecision{}, jobs: make(chan *pendingPacket, 256)}
 }
+func (r *router) send(raw []byte, addr packetAddress, modified bool) {
+	if err := r.io.Send(raw, addr, modified); err != nil && r.onSendError != nil {
+		r.onSendError(err)
+	}
+}
 func (r *router) route(raw []byte, addr packetAddress) {
 	p, err := decodeTCP(raw)
 	if err != nil {
-		_ = r.io.Send(raw, addr, false)
+		r.send(raw, addr, false)
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if mapped, drop := r.table.translate(p); mapped {
 		if !drop {
-			_ = r.io.Send(raw, addr, true)
+			r.send(raw, addr, true)
 		}
 		return
 	}
 	if r.stopped {
-		_ = r.io.Send(raw, addr, false)
+		r.send(raw, addr, false)
 		return
 	}
 	now := time.Now()
 	if d, ok := r.direct[p.key]; ok {
 		if now.Before(d.expires) && (!p.syn || d.seq == p.seq) {
-			_ = r.io.Send(raw, addr, false)
+			r.send(raw, addr, false)
 			return
 		}
 		delete(r.direct, p.key)
@@ -81,19 +88,19 @@ func (r *router) route(raw []byte, addr packetAddress) {
 		// SYN first and pin direct. Never splice a TCP handshake midstream.
 		delete(r.pending, p.key)
 		r.pinDirectLocked(job.p)
-		_ = r.io.Send(job.p.data, job.addr, false)
-		_ = r.io.Send(raw, addr, false)
+		r.send(job.p.data, job.addr, false)
+		r.send(raw, addr, false)
 		return
 	}
 	if !p.syn || p.ack || !eligibleDestination(p.key.remote.Addr()) || addr.impostor() {
-		_ = r.io.Send(raw, addr, false)
+		r.send(raw, addr, false)
 		return
 	}
 	if len(r.pending) >= 128 || len(r.direct) >= 65536 {
 		// Without owner attribution we cannot safely discriminate unrelated
 		// apps. Unknown packets pass unchanged. This engine is NOT a kill-switch.
 		r.pinDirectLocked(p)
-		_ = r.io.Send(raw, addr, false)
+		r.send(raw, addr, false)
 		return
 	}
 	buf := append([]byte(nil), raw...)
@@ -105,7 +112,7 @@ func (r *router) route(raw []byte, addr packetAddress) {
 	default:
 		delete(r.pending, p.key)
 		r.pinDirectLocked(cp)
-		_ = r.io.Send(buf, addr, false)
+		r.send(buf, addr, false)
 	}
 }
 func eligibleDestination(ip netip.Addr) bool {
@@ -133,7 +140,7 @@ func (r *router) resolve(job *pendingPacket) {
 	// best-effort, not as strict isolation.
 	if err != nil || route == nil || time.Now().After(job.deadline) {
 		r.pinDirectLocked(job.p)
-		_ = r.io.Send(job.p.data, job.addr, false)
+		r.send(job.p.data, job.addr, false)
 		return
 	}
 	if _, err = r.table.add(job.p, *route); err != nil {
@@ -141,7 +148,7 @@ func (r *router) resolve(job *pendingPacket) {
 		return
 	}
 	if mapped, drop := r.table.translate(job.p); mapped && !drop {
-		_ = r.io.Send(job.p.data, job.addr, true)
+		r.send(job.p.data, job.addr, true)
 	}
 }
 func (r *router) expire() {
@@ -152,13 +159,18 @@ func (r *router) expire() {
 		if !now.Before(job.deadline) {
 			delete(r.pending, k)
 			r.pinDirectLocked(job.p)
-			_ = r.io.Send(job.p.data, job.addr, false)
+			r.send(job.p.data, job.addr, false)
 		}
 	}
-	for k, d := range r.direct {
-		if !now.Before(d.expires) {
-			delete(r.direct, k)
+	// The receive loop ticks every 10 ms to expire pending SYNs. Walking
+	// 65K pinned-direct flows 100 times/s would consume unnecessary CPU.
+	if !now.Before(r.nextSweep) {
+		for k, d := range r.direct {
+			if !now.Before(d.expires) {
+				delete(r.direct, k)
+			}
 		}
+		r.nextSweep = now.Add(time.Second)
 	}
 }
 func (r *router) stop() {
@@ -170,7 +182,7 @@ func (r *router) stop() {
 	r.stopped = true
 	for k, job := range r.pending {
 		delete(r.pending, k)
-		_ = r.io.Send(job.p.data, job.addr, false)
+		r.send(job.p.data, job.addr, false)
 	}
 	close(r.jobs)
 }

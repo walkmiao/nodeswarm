@@ -1,7 +1,9 @@
 package pidtcp
 
 import (
+	"fmt"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -99,6 +101,47 @@ func TestRouterRejectsConflictingSourceReuse(t *testing.T) {
 	io.mu.Unlock()
 	if count != 1 {
 		t.Fatalf("conflicting SYN injected: %d", count)
+	}
+	r.stop()
+}
+
+type brokenPacketIO struct{}
+
+func (brokenPacketIO) Send(_ []byte, _ packetAddress, _ bool) error {
+	return fmt.Errorf("injection denied")
+}
+
+func TestPacketInjectionFailureIsReported(t *testing.T) {
+	table := newFlowTable(34010, 10)
+	r := newRouter(brokenPacketIO{}, table, func(flowKey) (*Route, error) { return nil, nil })
+	var errorsSeen int
+	r.onSendError = func(err error) {
+		if strings.Contains(err.Error(), "injection denied") {
+			errorsSeen++
+		}
+	}
+	// ACK cannot open a new mapping; it must be retransmitted unchanged.
+	b := makePacket(false, 999)
+	b[33] = 0x10
+	r.route(b, packetAddress{})
+	if errorsSeen != 1 {
+		t.Fatalf("driver injection failure was not surfaced: %d", errorsSeen)
+	}
+	r.stop()
+}
+func TestPinnedDirectDecisionsSweepOnInterval(t *testing.T) {
+	r := newRouter(&testIO{}, newFlowTable(34010, 4), func(flowKey) (*Route, error) { return nil, nil })
+	key := flowKey{local: netip.MustParseAddrPort("10.0.0.1:1001"), remote: netip.MustParseAddrPort("203.0.113.2:443")}
+	r.direct[key] = synDecision{seq: 1, expires: time.Now().Add(-time.Second)}
+	r.nextSweep = time.Now().Add(time.Minute)
+	r.expire()
+	if len(r.direct) != 1 {
+		t.Fatal("full direct cache scanned before scheduled sweep")
+	}
+	r.nextSweep = time.Now().Add(-time.Second)
+	r.expire()
+	if len(r.direct) != 0 {
+		t.Fatal("direct cache did not expire on scheduled sweep")
 	}
 	r.stop()
 }
