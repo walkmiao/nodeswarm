@@ -115,7 +115,7 @@ func TestPacketInjectionFailureIsReported(t *testing.T) {
 	table := newFlowTable(34010, 10)
 	r := newRouter(brokenPacketIO{}, table, func(flowKey) (*Route, error) { return nil, nil })
 	var errorsSeen int
-	r.onSendError = func(err error) {
+	r.onFailure = func(err error) {
 		if strings.Contains(err.Error(), "injection denied") {
 			errorsSeen++
 		}
@@ -142,6 +142,29 @@ func TestPinnedDirectDecisionsSweepOnInterval(t *testing.T) {
 	r.expire()
 	if len(r.direct) != 0 {
 		t.Fatal("direct cache did not expire on scheduled sweep")
+	}
+	r.stop()
+}
+
+func TestRouterDecisionCacheOverloadStopsNewRedirects(t *testing.T) {
+	io := &testIO{}
+	r := newRouter(io, newFlowTable(34010, 4), func(flowKey) (*Route, error) { return &Route{PID: 9}, nil })
+	r.decisionCap = 1
+	var errorText string
+	r.onFailure = func(err error) { errorText = err.Error() }
+	first, _ := decodeTCP(makePacket(false, 1))
+	r.pinDirectLocked(first)
+	secondBytes := makePacket(false, 2)
+	binaryPortAt(secondBytes, 55555)
+	second, _ := decodeTCP(secondBytes)
+	r.pinDirectLocked(second)
+	if !r.bypass || len(r.direct) != 1 || !strings.Contains(errorText, "cache exhausted") {
+		t.Fatalf("cache cap must fail engine without unbounded growth: bypass=%v size=%d error=%q", r.bypass, len(r.direct), errorText)
+	}
+	// Existing NAT takes precedence, but unowned new SYNs cannot be promoted to proxy.
+	r.route(secondBytes, packetAddress{})
+	if _, ok := io.last(); !ok {
+		t.Fatal("bypass should forward unchanged")
 	}
 	r.stop()
 }

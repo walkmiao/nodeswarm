@@ -1,6 +1,7 @@
 package pidtcp
 
 import (
+	"errors"
 	"net/netip"
 	"sync"
 	"time"
@@ -42,16 +43,18 @@ type router struct {
 	direct      map[flowKey]synDecision
 	jobs        chan *pendingPacket
 	stopped     bool
+	bypass      bool // irreversible for this run after decision-cache exhaustion
+	decisionCap int
 	nextSweep   time.Time
-	onSendError func(error) // supplied by engine; abort on packet injection failure
+	onFailure   func(error) // supplied by engine; abort on injection or overload
 }
 
 func newRouter(io PacketIO, table *flowTable, owner ownerFunc) *router {
-	return &router{io: io, table: table, owner: owner, pending: map[flowKey]*pendingPacket{}, direct: map[flowKey]synDecision{}, jobs: make(chan *pendingPacket, 256)}
+	return &router{io: io, table: table, owner: owner, pending: map[flowKey]*pendingPacket{}, direct: map[flowKey]synDecision{}, jobs: make(chan *pendingPacket, 256), decisionCap: 65536}
 }
 func (r *router) send(raw []byte, addr packetAddress, modified bool) {
-	if err := r.io.Send(raw, addr, modified); err != nil && r.onSendError != nil {
-		r.onSendError(err)
+	if err := r.io.Send(raw, addr, modified); err != nil && r.onFailure != nil {
+		r.onFailure(err)
 	}
 }
 func (r *router) route(raw []byte, addr packetAddress) {
@@ -68,7 +71,7 @@ func (r *router) route(raw []byte, addr packetAddress) {
 		}
 		return
 	}
-	if r.stopped {
+	if r.stopped || r.bypass {
 		r.send(raw, addr, false)
 		return
 	}
@@ -96,7 +99,7 @@ func (r *router) route(raw []byte, addr packetAddress) {
 		r.send(raw, addr, false)
 		return
 	}
-	if len(r.pending) >= 128 || len(r.direct) >= 65536 {
+	if len(r.pending) >= 128 || len(r.direct) >= r.decisionCap {
 		// Without owner attribution we cannot safely discriminate unrelated
 		// apps. Unknown packets pass unchanged. This engine is NOT a kill-switch.
 		r.pinDirectLocked(p)
@@ -119,6 +122,17 @@ func eligibleDestination(ip netip.Addr) bool {
 	return ip.IsValid() && ip.IsGlobalUnicast() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
 }
 func (r *router) pinDirectLocked(p tcpPacket) {
+	if _, already := r.direct[p.key]; !already && len(r.direct) >= r.decisionCap {
+		// Cannot remember another direct decision, so never turn it into a
+		// proxy route on later retransmits. Stop this engine and report error.
+		if !r.bypass {
+			r.bypass = true
+			if r.onFailure != nil {
+				r.onFailure(errors.New("TCP owner decision cache exhausted; interception disabled"))
+			}
+		}
+		return
+	}
 	r.direct[p.key] = synDecision{seq: p.seq, expires: time.Now().Add(5 * time.Minute)}
 }
 func (r *router) resolve(job *pendingPacket) {
@@ -135,6 +149,12 @@ func (r *router) resolve(job *pendingPacket) {
 		return
 	}
 	delete(r.pending, job.p.key)
+	if r.bypass || r.stopped {
+		// A decision-cache exhaustion or shutdown must not promote a
+		// previously queued SYN into a new proxy mapping.
+		r.send(job.p.data, job.addr, false)
+		return
+	}
 	// Never redirect if no owner or a lookup exceeded its bounded deadline.
 	// The bound PID may have escaped in this case; report capability as
 	// best-effort, not as strict isolation.
