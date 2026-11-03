@@ -1,0 +1,5 @@
+# Replace with the public FQDN pointing at this controller.
+console.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8088
+}

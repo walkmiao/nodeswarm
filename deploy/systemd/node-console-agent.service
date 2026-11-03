@@ -1,0 +1,27 @@
+[Unit]
+Description=Node Console Cloud Agent (SOCKS5 + telemetry)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nodeconsole
+Group=nodeconsole
+EnvironmentFile=/etc/node-console/agent.env
+Environment=NODE_MANAGER_AGENT_DATA=/var/lib/node-console-agent
+ExecStart=/usr/local/bin/node-console -mode agent
+Restart=always
+RestartSec=8
+StateDirectory=node-console-agent
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/node-console-agent
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

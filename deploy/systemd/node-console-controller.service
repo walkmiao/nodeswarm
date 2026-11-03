@@ -1,0 +1,23 @@
+[Unit]
+Description=Node Console Controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nodeconsole
+Group=nodeconsole
+Environment=NODE_MANAGER_DATA=/var/lib/node-console-controller
+ExecStart=/usr/local/bin/node-console -mode controller -listen 127.0.0.1:8088
+Restart=always
+RestartSec=5
+StateDirectory=node-console-controller
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/node-console-controller
+
+[Install]
+WantedBy=multi-user.target
