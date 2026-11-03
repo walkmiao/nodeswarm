@@ -35,6 +35,11 @@ func (a *App) ClearLogs()                              { a.core.ClearLogs() }
 // No method exposes the device token, enrollment key or SOCKS5 passwords.
 
 func main() {
+	release, lockErr := acquireAppLock()
+	if lockErr != nil {
+		log.Fatal(lockErr)
+	}
+	defer release()
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		log.Fatal(err)

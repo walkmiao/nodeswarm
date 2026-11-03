@@ -1,4 +1,4 @@
-# NodeSwarm v1.5.0 — 分布式云代理与 Windows 客户端管理平台
+# NodeSwarm v1.6.0 — 分布式云代理与 Windows 客户端管理平台
 
 面向自有云服务器及 Windows 工作站的 **Controller + Cloud Agent + Windows Client + SOCKS5 节点池** 运维平台。
 将分散在 Linux / Windows 主机上的 SOCKS5 服务，统一到一个轻量的 Web 控制台中管理。系统提供节点注册、心跳、主机指标、凭据保护、远程配置/启停、批量操作、节点监测与规则导出。Go 标准库构建，前端已嵌入二进制，无需 Node.js、数据库或额外 Web 静态资源。
@@ -302,3 +302,7 @@ Open **Windows 客户端**, select a workstation and click **自动填充空位*
 - 实际安装、注册、进程绑定和设备权限：[`docs/DESKTOP_APP.md`](docs/DESKTOP_APP.md)。
 - Windows GitHub Actions：`.github/workflows/desktop.yml`，产物 `NodeSwarm-Desktop.exe`。
 - 已有 PID 配额机制保持：主控上限与本机硬上限同时生效，同名 PID 透明隔离仍需独立实现。
+
+### Desktop v1.6 security notes
+
+The native Windows Desktop app stores enrolled device credentials using user-scoped DPAPI with migration from legacy plaintext. It rejects duplicate instances in the same Windows logon session, and stops its managed proxy backend immediately if a Controller heartbeat fails. This **does not block direct connections**; PID binding still represents a plan until a Windows-specific process-isolated traffic engine has been built and independently verified. See `docs/DESKTOP_APP.md`.

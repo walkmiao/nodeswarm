@@ -54,3 +54,10 @@ This copies the native EXE to Program Files and creates Start Menu / Desktop sho
 - Native Windows Wails build is validated through the GitHub Windows build workflow; this development environment cannot launch a Windows GUI or test the actual Windows WebView2 runtime locally.
 - Actual game compatibility, WebView2 on offline Windows machines, and true same-name PID transparent network isolation remain outstanding acceptance items.
 - The historic `node-console -mode client` CLI still works as a headless compatibility option, but **do not install it as the user-facing application**. Use the native Desktop App.
+
+## v1.6 safety changes
+
+- On Windows, the desktop device token is encrypted with per-user Windows DPAPI. Previous plaintext `agent.json` files are migrated automatically. A copied profile cannot be decrypted under a different Windows user; in that case, re-enroll the workstation.
+- Only one instance can run per Windows logon session (`Local\\NodeSwarm-Desktop` mutex).
+- If the Controller becomes unreachable, the managed ProxyBridge child is immediately stopped and the UI shows `controller_unreachable`. **This is not firewall fail-closed behavior:** the game or any other application can still connect directly. A separate OS-enforced block policy is needed before promising leak prevention.
+- The desktop PID list checks PID and creation time together and does not label failed/unknown engines as successful routing.

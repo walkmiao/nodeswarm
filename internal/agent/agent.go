@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/walkmiao/nodeswarm/internal/identity"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -37,12 +37,7 @@ type Config struct {
 	OnClientReport     func(control.ClientSnapshot) // native desktop status; never contains proxy passwords
 	OnConnection       func(bool, string)           // heartbeat and connection state for native desktop
 }
-type credential struct {
-	Role       string `json:"role,omitempty"`
-	ID         string `json:"id"`
-	Token      string `json:"token"`
-	Controller string `json:"controller"`
-}
+type credential = identity.Credentials
 type daemon struct {
 	cfg          Config
 	creds        credential
@@ -103,48 +98,8 @@ func (d *daemon) request(ctx context.Context, path, token string, body any, ret 
 	}
 	return nil
 }
-func loadCredential(dir string) (credential, error) {
-	var c credential
-	b, e := os.ReadFile(filepath.Join(dir, "agent.json"))
-	if e != nil {
-		return c, e
-	}
-	e = json.Unmarshal(b, &c)
-	if e != nil {
-		return c, e
-	}
-	if c.ID == "" || c.Token == "" {
-		return c, errors.New("invalid agent credential")
-	}
-	return c, nil
-}
-func saveCredential(dir string, c credential) error {
-	b, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, ".agent-*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err = f.Chmod(0600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err = f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), filepath.Join(dir, "agent.json"))
-}
+func loadCredential(dir string) (credential, error) { return identity.Load(dir) }
+func saveCredential(dir string, c credential) error { return identity.Save(dir, c) }
 func validateController(c Config) error {
 	u, e := url.Parse(c.Controller)
 	if e != nil || u.Hostname() == "" || u.User != nil {
@@ -230,6 +185,15 @@ func Run(ctx context.Context, c Config) error {
 	defer d.service.Stop()
 	for {
 		if err := d.heartbeat(ctx); err != nil {
+			// The workstation must not keep a stale process-name proxy profile
+			// running while its lease to Controller is lost. This does not
+			// block direct OS networking; the UI reports that limitation.
+			if d.workstation != nil {
+				d.workstation.Suspend(err.Error())
+				if c.OnClientReport != nil {
+					c.OnClientReport(d.workstation.Observe())
+				}
+			}
 			if c.OnConnection != nil {
 				c.OnConnection(false, err.Error())
 			}

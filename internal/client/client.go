@@ -377,4 +377,20 @@ func (m *Manager) stopLocked() {
 		m.profile = ""
 	}
 }
+
+// Suspend stops the managed proxy executable immediately when Controller
+// authorization or heartbeat is unavailable. This is NOT a network firewall:
+// unmanaged applications may still connect directly. We report this fact
+// rather than claiming fail-closed packet isolation.
+func (m *Manager) Suspend(reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopLocked()
+	m.state.Error = "controller_unreachable: " + reason
+	for i := range m.state.Routes {
+		m.state.Routes[i].Status = "controller_unreachable"
+		m.state.Routes[i].Detail = "已停止 NodeSwarm 托管代理；Windows 未阻止应用直连，请检查网络"
+	}
+}
+
 func (m *Manager) Stop() { m.mu.Lock(); defer m.mu.Unlock(); m.stopLocked() }

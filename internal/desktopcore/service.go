@@ -22,6 +22,7 @@ import (
 
 	"github.com/walkmiao/nodeswarm/internal/agent"
 	"github.com/walkmiao/nodeswarm/internal/control"
+	"github.com/walkmiao/nodeswarm/internal/identity"
 	"github.com/walkmiao/nodeswarm/internal/manager"
 )
 
@@ -49,12 +50,7 @@ type State struct {
 	Logs            []string               `json:"logs"`
 }
 
-type credentials struct {
-	ID         string `json:"id"`
-	Token      string `json:"token"`
-	Role       string `json:"role"`
-	Controller string `json:"controller"`
-}
+type credentials = identity.Credentials
 
 type Service struct {
 	mu              sync.Mutex
@@ -145,16 +141,12 @@ func New(dir string) (*Service, error) {
 func (s *Service) agentDir() string { return filepath.Join(s.dir, "agent") }
 
 func (s *Service) readCredentials() (credentials, error) {
-	var c credentials
-	data, err := os.ReadFile(filepath.Join(s.agentDir(), "agent.json"))
+	c, err := identity.Load(s.agentDir())
 	if err != nil {
 		return c, err
 	}
-	if err = json.Unmarshal(data, &c); err != nil {
-		return c, err
-	}
-	if c.ID == "" || c.Token == "" || (c.Role != "client" && c.Role != "") {
-		return c, errors.New("当前设备凭据无效")
+	if c.Role != "client" && c.Role != "" {
+		return credentials{}, errors.New("当前设备凭据的角色无效")
 	}
 	return c, nil
 }

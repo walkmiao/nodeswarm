@@ -35,6 +35,9 @@ jobs:
       - name: Resolve desktop module
         working-directory: desktop
         run: go mod tidy
+      - name: Desktop module tests (including Windows singleton)
+        working-directory: desktop
+        run: go test ./... -count=1
       - name: Build native desktop app
         working-directory: desktop
         run: wails build -clean -webview2 embed

@@ -16,14 +16,34 @@
   function quota() {const server=state.remote?.maxProxyPids||8, local=state.settings?.pidHardLimit||0;return local>0?Math.min(server,local):server;}
   function toast(text,error=false){const el=$('#toast');el.textContent=text;el.classList.toggle('error',error);el.classList.add('show');const n=++lastToast;setTimeout(()=>{if(n===lastToast)el.classList.remove('show');},3800);}
   async function call(method,...args){if(!bridge){throw Error('当前是界面预览模式，请使用安装的 Windows App 操作。');}if(busy)throw Error('上一操作尚未完成');busy=true;try{return await bridge[method](...args);}finally{busy=false;}}
-  function switchView(key){if(!views[key])return;tab=key;$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===key));$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${key}`));$('#breadcrumb-current').textContent=key==='overview'?'总览':views[key][0];$('#page-title').textContent=views[key][0];$('#page-description').textContent=views[key][1];}
-  function getBinding(pid){return (state.remote?.clientBindings||[]).find(b=>b.pid===pid);}
+  function switchView(key){if(!views[key])return;tab=key;$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===key));$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${key}`));$('#breadcrumb-current').textContent=key==='overview'?'总览':views[key][0];$('#page-title').textContent=views[key][0];$('#page-description').textContent=views[key][1];}
+  // A PID can be reused by Windows. Never display a binding for the wrong
+  // process incarnation or label it as an active proxy route.
+  function getBinding(pid,startTime){return (state.remote?.clientBindings||[]).find(b=>b.pid===pid && b.startTime===startTime);}
+  function routeBadge(route,binding){
+    const status=route?.status;
+    const map={
+      planned_only:['仅规划 · 未代理','blue'],
+      process_name_unverified:['引擎运行 · 出口未验证','warn'],
+      controller_unreachable:['主控断线 · 代理已停','warn'],
+      cannot_enforce:['代理无法执行','warn'],
+      pid_limit_exceeded:['超出 PID 配额','warn'],
+      scan_unavailable:['进程扫描失败','warn'],
+      stale_pid:['PID 身份已失效','warn'],
+      engine_error:['代理程序异常','warn'],
+      engine_exited:['代理已退出','warn']
+    };
+    if(status && map[status])return tag(...map[status]);
+    if(status)return tag('未识别状态：'+status,'warn');
+    if(binding)return tag(state.connected?'待客户端确认':'离线 · 未确认','warn');
+    return tag('未分配');
+  }
   function processTable(processes,summary=false){if(!processes?.length)return `<div class="empty"><div class="empty-symbol">▤</div><strong>暂无符合条件的进程</strong><small>打开目标游戏客户端后，程序会自动发现该进程。</small></div>`;
     const list=summary?processes.slice(0,5):processes;
     let head=summary?'<th style="width:49%">程序与路径</th><th style="width:22%">PID</th><th>绑定状态</th>':'<th style="width:28%">游戏进程</th><th style="width:10%">PID</th><th style="width:22%">代理节点</th><th style="width:16%">执行状态</th><th style="width:24%">操作</th>';
     return `<table><thead><tr>${head}</tr></thead><tbody>${list.map(p=>{
-      const b=getBinding(p.pid), node=(state.nodes||[]).find(n=>n.id===b?.nodeId);const route=(state.client?.routes||[]).find(r=>r.pid===p.pid && r.startTime===p.startTime);
-      const status=route?.status==='process_name_unverified'?tag('进程名规则 · 未验证','warn'):route?.status==='planned_only'||b?tag('策略已规划','blue'):tag('未分配');
+      const b=getBinding(p.pid,p.startTime), node=(state.nodes||[]).find(n=>n.id===b?.nodeId);const route=(state.client?.routes||[]).find(r=>r.pid===p.pid && r.startTime===p.startTime);
+      const status=routeBadge(route,b);
       if(summary)return `<tr><td><div class="process-name">${esc(p.name)}</div><div class="process-sub" title="${esc(p.path)}">${esc(p.path)}</div></td><td class="pid">${esc(p.pid)}</td><td>${status}</td></tr>`;
       const opts=(state.nodes||[]).filter(n=>n.enabled).map(n=>`<option value="${esc(n.id)}" ${b?.nodeId===n.id?'selected':''}>${esc(n.name)}</option>`).join('');
       return `<tr><td><div class="process-name">${esc(p.name)}</div><div class="process-sub" title="${esc(p.path)}">${esc(p.path)}</div></td><td class="pid">${esc(p.pid)}</td><td>${b?esc(node?.name||'已失效节点'):'未绑定'}</td><td>${status}</td><td><div class="assign-controls"><select class="assign-select" aria-label="为 PID ${esc(p.pid)} 选择节点" data-node-for="${p.pid}"><option value="">选择节点</option>${opts}</select><button class="action-link" data-assign="${p.pid}" data-start="${esc(p.startTime)}">分配</button>${b?`<button class="action-link danger" data-unassign="${p.pid}" data-start="${esc(p.startTime)}">解绑</button>`:''}</div></td></tr>`;
@@ -33,14 +53,24 @@
   function render(){const procs=state.client?.processes||[],routes=state.client?.routes||[],bound=state.remote?.clientBindings||[],nodes=state.nodes||[];const connected=!!state.connected, running=!!state.running;
     $('#machine-name').textContent=state.settings?.name||'本机客户端';$('#side-title').textContent=connected?'主控已连接':running?'正在重连':'未连接';$('#side-subtitle').textContent=state.settings?.controller||'等待连接 Controller';$('#side-dot').className='status-dot '+(connected?'':running?'warn':'muted');$('#sync-label').textContent=connected?'上次同步 '+fmtTime(state.lastSync):running?'正在连接…':'未连接';$('#process-count').textContent=procs.length;
     $('#connect-btn').textContent=running?'断开连接':'连接主控';$('#connect-btn').className='btn '+(running?'btn-danger':'btn-primary');$('#metric-procs').textContent=procs.length;$('#metric-proc-note').textContent='目标进程 '+(state.settings?.targets||'Client.exe');$('#metric-bound').textContent=bound.length;$('#metric-limit').textContent=quota();$('#metric-quota-note').textContent=bound.length>=quota()?'已达到本机配额上限':`还可分配 ${Math.max(0,quota()-bound.length)} 个 PID`;$('#metric-nodes').textContent=nodes.filter(n=>n.enabled).length;$('#metric-engine').textContent=state.settings?.engine==='proxybridge'?'ProxyBridge':'Observe';$('#metric-mode-note').textContent=state.settings?.engine==='proxybridge'?'进程名规则 · 出口未验证':'仅监控，不接管网络连接';$('#setup-notice').hidden=!!state.settings?.controller;
-    $('#overview-processes').innerHTML=processTable(procs,true);$('#all-processes').innerHTML=processTable(procs);$('#quota-badge').textContent=`${bound.length} / ${quota()} PID`;$('#autofill-btn').disabled=!connected || procs.length===0 || !nodes.length;
+    $('#overview-processes').innerHTML=processTable(procs,true);
+    // Avoid resetting the user's node selection every time the background
+    // 4-second status poll refreshes the process table.
+    const selections=Object.fromEntries($('[data-node-for]').map(x=>[x.dataset.nodeFor,x.value]));
+    const focusPid=document.activeElement?.dataset?.nodeFor;
+    $('#all-processes').innerHTML=processTable(procs);
+    for(const item of $('[data-node-for]')) {
+      const selected=selections[item.dataset.nodeFor];
+      if(selected && [...item.options].some(o=>o.value===selected))item.value=selected;
+    }
+    if(focusPid){const selected=$('[data-node-for]').find(x=>x.dataset.nodeFor===focusPid);if(selected)selected.focus();}$('#quota-badge').textContent=`${bound.length} / ${quota()} PID`;$('#autofill-btn').disabled=!connected || procs.length===0 || !nodes.length;
     $('#overview-connect').textContent=connected?'心跳正常，连接到 '+state.settings.controller:running?'正在建立安全连接':'未运行';// Keep status badges as stable DOM nodes across refreshes
     const stepBadge=(id,html)=>{let el=$('#'+id);if(el)el.outerHTML=html.replace('<span','<span id="'+id+'"')};
     // Restore the stable label node after switching its semantic status.
 
     stepBadge('overview-connect-badge',tag(connected?'在线':running?'连接中':'离线',connected?'success':running?'warn':'muted'));
     $('#overview-scan').textContent=state.client?.scanError||`最近发现 ${procs.length} 个目标进程`;stepBadge('overview-scan-badge',tag(state.client?.scanError?'采集异常':running?'正常':'未启动',state.client?.scanError?'warn':running?'success':'muted'));
-    $('#overview-policy').textContent=state.client?.error||`${bound.length} 个 PID 已规划，${routes.length} 条执行状态`;stepBadge('overview-policy-badge',tag(state.client?.error?'异常':bound.length?'已规划':'未应用',state.client?.error?'warn':bound.length?'blue':'muted'));
+    $('#overview-policy').textContent=state.client?.error||`${bound.length} 个 PID 已规划（不代表代理生效），${routes.length} 条执行状态`;stepBadge('overview-policy-badge',tag(state.client?.error?'异常':bound.length?'已规划':'未应用',state.client?.error?'warn':bound.length?'blue':'muted'));
     $('#overview-logs').innerHTML=(state.logs||[]).slice(-3).reverse().map(s=>`<div class="log-line">${esc(s)}</div>`).join('')||'<div class="empty" style="padding:15px">暂无事件记录</div>';
     $('#log-list').innerHTML=(state.logs||[]).slice().reverse().map(s=>`<div class="log-item">${esc(s)}</div>`).join('')||'<div class="empty">暂无运行日志</div>';
     renderNodes();updateSettings();
@@ -55,12 +85,12 @@
   document.addEventListener('click',async e=>{
     const nav=e.target.closest('[data-view]');if(nav){switchView(nav.dataset.view);return}
     const jump=e.target.closest('[data-switch]');if(jump){switchView(jump.dataset.switch);return}
-    const bind=e.target.closest('[data-assign]');if(bind){const pid=Number(bind.dataset.assign),start=bind.dataset.start,nodeID=document.querySelector(`[data-node-for="${pid}"]`)?.value;if(!nodeID){toast('请先选择代理节点',true);return}await operation(()=>call('Assign',pid,start,nodeID),async()=>{await bridge.Refresh();toast('绑定策略已保存，等待客户端报告实际状态')});return}
+    const bind=e.target.closest('[data-assign]');if(bind){const pid=Number(bind.dataset.assign),start=bind.dataset.start,nodeID=document.querySelector(`[data-node-for="${pid}"]`)?.value;if(!nodeID){toast('请先选择代理节点',true);return}await operation(()=>call('Assign',pid,start,nodeID),async()=>{await bridge.Refresh();toast('绑定计划已保存；需单独验证应用实际出口')});return}
     const unbind=e.target.closest('[data-unassign]');if(unbind){await operation(()=>call('Unassign',Number(unbind.dataset.unassign),unbind.dataset.start),async()=>{await bridge.Refresh();toast('已解除绑定')});return}
   });
   $('#refresh-btn').addEventListener('click',async()=>{await operation(async()=>{if(bridge)await bridge.Refresh()},()=>toast('状态已刷新'))});
   $('#nodes-refresh').addEventListener('click',refreshRemote);
-  $('#autofill-btn').addEventListener('click',()=>operation(()=>call('AutoFill'),async()=>{await bridge.Refresh();toast('自动补齐策略已提交')}));
+  $('#autofill-btn').addEventListener('click',()=>operation(()=>call('AutoFill'),async()=>{await bridge.Refresh();toast('代理节点分配计划已提交；尚不代表游戏流量已经代理')}));
   $('#connect-btn').addEventListener('click',()=>operation(async()=>{if(state.running){await call('Stop');toast('已断开连接')}else{if(!state.settings.controller){switchView('settings');toast('请先填写连接设置');return}const key=$('#settings-form').elements.namedItem('enrollKey').value;await call('Start',key);toast('正在启动客户端')}},()=>{}));
   $('#settings-form').addEventListener('submit',e=>{e.preventDefault();operation(()=>call('SaveSettings',readSettings()),()=>{toast('本机设置已保存');lastSettingsVersion='';})});
   $('#settings-start').addEventListener('click',()=>operation(async()=>{await call('SaveSettings',readSettings());const key=$('#settings-form').elements.namedItem('enrollKey').value;await call('Start',key);$('#settings-form').elements.namedItem('enrollKey').value='';switchView('overview');toast('正在连接 Controller')}));

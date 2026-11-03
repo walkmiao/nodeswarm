@@ -76,3 +76,12 @@
 ## v1.0.0 - 2026-11-02
 
 - Initial self-hosted Controller, outbound Agent registration and heartbeats, SOCKS5 TCP/UDP listener, proxy inventory, monitoring, and admin dashboard.
+
+## v1.6.0 — Windows desktop security and connection safety
+
+- Windows per-device bearer tokens now use per-user Windows DPAPI at rest (`tokenDpapi`) with automatic one-time migration from legacy plaintext `agent.json`.
+- Each interactive logon session permits only one running Desktop App instance, preventing two agents from concurrently applying conflicting proxy profiles.
+- A workstation heartbeat/authentication failure immediately stops its managed ProxyBridge child. The UI explicitly states that this **does not block direct OS network access**.
+- PID table matches **PID + process creation time** and shows errors (stale PID, unreachable controller, scan error, engine exit) instead of silently displaying "planned".
+- Desktop selection is preserved during 4-second refreshes. Windows identity, mutex and failsafe tests were added.
+- **Not yet completed:** true transparent per-PID Windows traffic redirection, DNS/UDP leakage isolation and game compatibility tests. The application must not claim that a plan or process-name rule proves game egress.
