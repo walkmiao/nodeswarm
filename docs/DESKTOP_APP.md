@@ -61,3 +61,9 @@ This copies the native EXE to Program Files and creates Start Menu / Desktop sho
 - Only one instance can run per Windows logon session (`Local\\NodeSwarm-Desktop` mutex).
 - If the Controller becomes unreachable, the managed ProxyBridge child is immediately stopped and the UI shows `controller_unreachable`. **This is not firewall fail-closed behavior:** the game or any other application can still connect directly. A separate OS-enforced block policy is needed before promising leak prevention.
 - The desktop PID list checks PID and creation time together and does not label failed/unknown engines as successful routing.
+
+## v1.7 experimental PID TCP mode
+
+The optional third mode `pidtcp` uses a Windows x64 WinDivert driver and a separate Go TCP relay to route two different PIDs of the same EXE through separate SOCKS5 nodes. Set `WinDivert driver directory` to a trusted path containing official `WinDivert.dll` and `WinDivert64.sys`, and start the desktop as Administrator. On other operating systems, startup reports unsupported; no backend is silently substituted.
+
+**Do not confuse this with verified or leak-free routing:** UDP/DNS can go direct, TCP ownership lookup can miss the SYN, existing connections may bypass, and stopping the driver or Controller can allow traffic to go direct. The App reports `pid_tcp_unverified`, not success. See [PID_TCP_EXPERIMENT.md](PID_TCP_EXPERIMENT.md) for safety constraints and Windows acceptance steps.

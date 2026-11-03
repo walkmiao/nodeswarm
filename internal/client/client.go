@@ -1,6 +1,6 @@
-// Package client tracks application instances on a Windows workstation and
-// adapts explicit per-name routing to an installed ProxyBridge CLI. It never
-// claims to enforce distinct SOCKS5 routes for multiple PIDs of the same exe.
+// Package client tracks Windows workstation processes and supports observe,
+// process-name ProxyBridge, and an opt-in experimental PID-specific TCP relay.
+// The experimental relay is not a kill switch and does not route UDP or DNS.
 package client
 
 import (
@@ -21,12 +21,14 @@ import (
 
 	"github.com/walkmiao/nodeswarm/internal/control"
 	"github.com/walkmiao/nodeswarm/internal/manager"
+	"github.com/walkmiao/nodeswarm/internal/pidtcp"
 )
 
 type Config struct {
 	DataDir        string
-	Engine         string // observe (default) or proxybridge
+	Engine         string // observe, proxybridge, or pidtcp (experimental)
 	ProxyBridgeCLI string // full path to an administrator-approved executable
+	WinDivertDir   string // optional trusted directory with official WinDivert.dll and WinDivert64.sys
 	Targets        string // semicolon-separated basenames, e.g. Client.exe
 	PIDHardLimit   int    // optional device-side upper bound, 0 = use Controller limit
 }
@@ -44,6 +46,7 @@ type Manager struct {
 	exited      chan error
 	profile     string
 	fingerprint string
+	tcp         *pidtcp.Engine
 }
 
 func New(c Config) (*Manager, error) {
@@ -53,7 +56,7 @@ func New(c Config) (*Manager, error) {
 	if c.PIDHardLimit < 0 || c.PIDHardLimit > control.AbsoluteMaxProxyPIDs {
 		return nil, fmt.Errorf("PIDHardLimit must be 0-%d", control.AbsoluteMaxProxyPIDs)
 	}
-	if c.Engine != "observe" && c.Engine != "proxybridge" {
+	if c.Engine != "observe" && c.Engine != "proxybridge" && c.Engine != "pidtcp" {
 		return nil, fmt.Errorf("unsupported client engine %q", c.Engine)
 	}
 	if c.DataDir == "" {
@@ -106,6 +109,19 @@ func (m *Manager) Observe() control.ClientSnapshot {
 				}
 			}
 		default:
+		}
+	}
+	if m.tcp != nil && !m.tcp.Running() {
+		msg := "PID TCP redirector stopped"
+		if err := m.tcp.Err(); err != nil {
+			msg = "PID TCP redirector: " + err.Error()
+		}
+		m.state.Error = msg
+		for i := range m.state.Routes {
+			if m.state.Routes[i].Status == "pid_tcp_unverified" {
+				m.state.Routes[i].Status = "engine_exited"
+				m.state.Routes[i].Detail = msg
+			}
 		}
 	}
 	snapshot := m.state
@@ -271,6 +287,44 @@ func (m *Manager) Apply(policy *control.ClientPolicy) error {
 		}
 		return nil
 	}
+	if m.cfg.Engine == "pidtcp" {
+		compiled, err := pidtcp.Compile(*policy, m.all, m.cfg.PIDHardLimit)
+		if err != nil {
+			m.stopLocked()
+			m.state.Error = err.Error()
+			for i := range m.state.Routes {
+				m.state.Routes[i].Status = "cannot_enforce"
+				m.state.Routes[i].Detail = err.Error()
+			}
+			return nil
+		}
+		raw, err := json.Marshal(compiled)
+		if err != nil {
+			return err
+		}
+		hash := sha256.Sum256(raw)
+		signature := hex.EncodeToString(hash[:])
+		if m.tcp == nil || !m.tcp.Running() || m.fingerprint != signature {
+			m.stopLocked()
+			eng := &pidtcp.Engine{}
+			if err := eng.Start(compiled, m.cfg.WinDivertDir); err != nil {
+				m.state.Error = "pidtcp: " + err.Error()
+				for i := range m.state.Routes {
+					m.state.Routes[i].Status = "engine_error"
+					m.state.Routes[i].Detail = "WinDivert TCP 引擎启动失败: " + err.Error()
+				}
+				return nil
+			}
+			m.tcp = eng
+			m.fingerprint = signature
+		}
+		m.state.Error = "experimental TCP only: UDP/DNS and escaped TCP are not protected; no kill switch"
+		for i := range m.state.Routes {
+			m.state.Routes[i].Status = "pid_tcp_unverified"
+			m.state.Routes[i].Detail = "实验性 PID TCP SOCKS5 引擎已开启；未验证出口；UDP/DNS 不代理；故障可能直连"
+		}
+		return nil
+	}
 	raw, err := BuildProfile(*policy, m.all)
 	if err != nil {
 		m.stopLocked()
@@ -360,6 +414,10 @@ func (m *Manager) startLocked(profile []byte, fingerprint string) error {
 	return nil
 }
 func (m *Manager) stopLocked() {
+	if m.tcp != nil {
+		m.tcp.Stop()
+		m.tcp = nil
+	}
 	if m.command != nil {
 		_ = m.command.Process.Kill()
 		if m.exited != nil {

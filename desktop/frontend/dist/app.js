@@ -16,7 +16,7 @@
   function quota() {const server=state.remote?.maxProxyPids||8, local=state.settings?.pidHardLimit||0;return local>0?Math.min(server,local):server;}
   function toast(text,error=false){const el=$('#toast');el.textContent=text;el.classList.toggle('error',error);el.classList.add('show');const n=++lastToast;setTimeout(()=>{if(n===lastToast)el.classList.remove('show');},3800);}
   async function call(method,...args){if(!bridge){throw Error('当前是界面预览模式，请使用安装的 Windows App 操作。');}if(busy)throw Error('上一操作尚未完成');busy=true;try{return await bridge[method](...args);}finally{busy=false;}}
-  function switchView(key){if(!views[key])return;tab=key;$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===key));$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${key}`));$('#breadcrumb-current').textContent=key==='overview'?'总览':views[key][0];$('#page-title').textContent=views[key][0];$('#page-description').textContent=views[key][1];}
+  function switchView(key){if(!views[key])return;tab=key;$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===key));$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${key}`));$('#breadcrumb-current').textContent=key==='overview'?'总览':views[key][0];$('#page-title').textContent=views[key][0];$('#page-description').textContent=views[key][1];}
   // A PID can be reused by Windows. Never display a binding for the wrong
   // process incarnation or label it as an active proxy route.
   function getBinding(pid,startTime){return (state.remote?.clientBindings||[]).find(b=>b.pid===pid && b.startTime===startTime);}
@@ -25,6 +25,7 @@
     const map={
       planned_only:['仅规划 · 未代理','blue'],
       process_name_unverified:['引擎运行 · 出口未验证','warn'],
+      pid_tcp_unverified:['PID TCP 实验 · 未验出口','warn'],
       controller_unreachable:['主控断线 · 代理已停','warn'],
       cannot_enforce:['代理无法执行','warn'],
       pid_limit_exceeded:['超出 PID 配额','warn'],
@@ -52,18 +53,18 @@
   function renderNodes(){const nodes=state.nodes||[];$('#nodes-table').innerHTML=nodes.length?`<table><thead><tr><th style="width:32%">节点</th><th style="width:27%">SOCKS5 地址</th><th style="width:14%">地区</th><th style="width:13%">容量</th><th>健康状态</th></tr></thead><tbody>${nodes.map(n=>`<tr><td><div class="node-name"><span class="node-icon">◫</span>${esc(n.name)}</div></td><td class="node-host">${esc(n.host)}:${esc(n.port)}</td><td>${esc(n.region||'—')}</td><td>${esc((state.remote?.clientBindings||[]).filter(b=>b.nodeId===n.id).length)} / ${esc(n.capacity)}</td><td>${n.enabled?tag(n.lastStatus==='healthy'||n.lastStatus==='ok'?'正常':n.lastStatus==='untested'?'待检测':n.lastStatus==='error'?'异常':'已启用',n.lastStatus==='error'?'warn':n.lastStatus==='healthy'||n.lastStatus==='ok'?'success':'muted'):tag('已停用')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-symbol">◫</div><strong>暂无代理节点</strong><small>请在云端 Controller 中配置或导入 SOCKS5 节点。</small></div>'}
   function render(){const procs=state.client?.processes||[],routes=state.client?.routes||[],bound=state.remote?.clientBindings||[],nodes=state.nodes||[];const connected=!!state.connected, running=!!state.running;
     $('#machine-name').textContent=state.settings?.name||'本机客户端';$('#side-title').textContent=connected?'主控已连接':running?'正在重连':'未连接';$('#side-subtitle').textContent=state.settings?.controller||'等待连接 Controller';$('#side-dot').className='status-dot '+(connected?'':running?'warn':'muted');$('#sync-label').textContent=connected?'上次同步 '+fmtTime(state.lastSync):running?'正在连接…':'未连接';$('#process-count').textContent=procs.length;
-    $('#connect-btn').textContent=running?'断开连接':'连接主控';$('#connect-btn').className='btn '+(running?'btn-danger':'btn-primary');$('#metric-procs').textContent=procs.length;$('#metric-proc-note').textContent='目标进程 '+(state.settings?.targets||'Client.exe');$('#metric-bound').textContent=bound.length;$('#metric-limit').textContent=quota();$('#metric-quota-note').textContent=bound.length>=quota()?'已达到本机配额上限':`还可分配 ${Math.max(0,quota()-bound.length)} 个 PID`;$('#metric-nodes').textContent=nodes.filter(n=>n.enabled).length;$('#metric-engine').textContent=state.settings?.engine==='proxybridge'?'ProxyBridge':'Observe';$('#metric-mode-note').textContent=state.settings?.engine==='proxybridge'?'进程名规则 · 出口未验证':'仅监控，不接管网络连接';$('#setup-notice').hidden=!!state.settings?.controller;
+    $('#connect-btn').textContent=running?'断开连接':'连接主控';$('#connect-btn').className='btn '+(running?'btn-danger':'btn-primary');$('#metric-procs').textContent=procs.length;$('#metric-proc-note').textContent='目标进程 '+(state.settings?.targets||'Client.exe');$('#metric-bound').textContent=bound.length;$('#metric-limit').textContent=quota();$('#metric-quota-note').textContent=bound.length>=quota()?'已达到本机配额上限':`还可分配 ${Math.max(0,quota()-bound.length)} 个 PID`;$('#metric-nodes').textContent=nodes.filter(n=>n.enabled).length;$('#metric-engine').textContent=state.settings?.engine==='pidtcp'?'PID TCP（实验）':state.settings?.engine==='proxybridge'?'ProxyBridge':'Observe';$('#metric-mode-note').textContent=state.settings?.engine==='pidtcp'?'只接管 TCP · 不保证防直连 · 出口未验证':state.settings?.engine==='proxybridge'?'进程名规则 · 出口未验证':'仅监控，不接管网络连接';$('#setup-notice').hidden=!!state.settings?.controller;
     $('#overview-processes').innerHTML=processTable(procs,true);
     // Avoid resetting the user's node selection every time the background
     // 4-second status poll refreshes the process table.
-    const selections=Object.fromEntries($('[data-node-for]').map(x=>[x.dataset.nodeFor,x.value]));
+    const selections=Object.fromEntries($$('[data-node-for]').map(x=>[x.dataset.nodeFor,x.value]));
     const focusPid=document.activeElement?.dataset?.nodeFor;
     $('#all-processes').innerHTML=processTable(procs);
-    for(const item of $('[data-node-for]')) {
+    for(const item of $$('[data-node-for]')) {
       const selected=selections[item.dataset.nodeFor];
       if(selected && [...item.options].some(o=>o.value===selected))item.value=selected;
     }
-    if(focusPid){const selected=$('[data-node-for]').find(x=>x.dataset.nodeFor===focusPid);if(selected)selected.focus();}$('#quota-badge').textContent=`${bound.length} / ${quota()} PID`;$('#autofill-btn').disabled=!connected || procs.length===0 || !nodes.length;
+    if(focusPid){const selected=$$('[data-node-for]').find(x=>x.dataset.nodeFor===focusPid);if(selected)selected.focus();}$('#quota-badge').textContent=`${bound.length} / ${quota()} PID`;$('#autofill-btn').disabled=!connected || procs.length===0 || !nodes.length;
     $('#overview-connect').textContent=connected?'心跳正常，连接到 '+state.settings.controller:running?'正在建立安全连接':'未运行';// Keep status badges as stable DOM nodes across refreshes
     const stepBadge=(id,html)=>{let el=$('#'+id);if(el)el.outerHTML=html.replace('<span','<span id="'+id+'"')};
     // Restore the stable label node after switching its semantic status.
@@ -76,10 +77,10 @@
     renderNodes();updateSettings();
   }
   function updateSettings(){const form=$('#settings-form');const settings=state.settings||{};const fingerprint=JSON.stringify(settings);if(fingerprint===lastSettingsVersion)return;lastSettingsVersion=fingerprint;
-    for(const k of ['controller','name','targets','engine','proxyBridgeCli','pidHardLimit'])if(form.elements.namedItem(k))form.elements.namedItem(k).value=settings[k]??'';
+    for(const k of ['controller','name','targets','engine','proxyBridgeCli','winDivertDir','pidHardLimit'])if(form.elements.namedItem(k))form.elements.namedItem(k).value=settings[k]??'';
     form.elements.namedItem('autoConnect').checked=!!settings.autoConnect;
   }
-  function readSettings(){const els=$('#settings-form').elements;return {controller:els.namedItem('controller').value.trim(),name:els.namedItem('name').value.trim(),targets:els.namedItem('targets').value.trim(),engine:els.namedItem('engine').value,proxyBridgeCli:els.namedItem('proxyBridgeCli').value.trim(),pidHardLimit:Number(els.namedItem('pidHardLimit').value)||0,autoConnect:els.namedItem('autoConnect').checked};}
+  function readSettings(){const els=$('#settings-form').elements;return {controller:els.namedItem('controller').value.trim(),name:els.namedItem('name').value.trim(),targets:els.namedItem('targets').value.trim(),engine:els.namedItem('engine').value,proxyBridgeCli:els.namedItem('proxyBridgeCli').value.trim(),winDivertDir:els.namedItem('winDivertDir').value.trim(),pidHardLimit:Number(els.namedItem('pidHardLimit').value)||0,autoConnect:els.namedItem('autoConnect').checked};}
   async function refreshRemote(){if(!bridge)return;try{state=await bridge.GetState();if(state.credentialReady){await bridge.Refresh();state=await bridge.GetState()}render()}catch(e){toast(String(e),true)}}
   async function operation(fn,after){try{await fn();if(after)await after();if(bridge){state=await bridge.GetState();render()}}catch(e){toast(String(e),true)}}
   document.addEventListener('click',async e=>{

@@ -1,3 +1,11 @@
+## v1.7.0 — opt-in experimental per-PID TCP SOCKS5 redirection
+
+- Add Windows x64-only `internal/pidtcp` engine: PID + process creation time validation, separate same-name PID -> SOCKS5 routes, bounded initial SYN attribution, TCP NAT relay, IPv4/IPv6 packet parsing, SOCKS5 CONNECT with credentials, and no fallback after captured proxy CONNECT failure.
+- Preserve Controller quota and local hard PID cap; start/stop with Client Agent lifecycle and show explicit `pid_tcp_unverified` warning in Wails UI.
+- Keep `observe` as the default mode; require user opt-in, administrator rights, and separately installed official WinDivert 2.2 driver files.
+- Add deterministic policy, TCP packet/NAT, SOCKS5 handshake and router regression tests; Windows CI compilation is not Windows driver/real-game acceptance.
+- **Known limitations:** captured TCP only, no UDP or DNS proxy, no OS kill switch, unknown-owner and driver-failure paths may connect directly. Never claim verified egress or fail-closed network isolation.
+
 ## v1.5.0 — Windows native desktop client (Wails)
 
 - Added a standalone Windows desktop App (`desktop/`) with native Wails/WebView2 window. The workstation user no longer needs a browser or CLI as the daily UI.

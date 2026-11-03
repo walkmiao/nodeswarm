@@ -1,9 +1,11 @@
-# NodeSwarm v1.6.0 — 分布式云代理与 Windows 客户端管理平台
+# NodeSwarm v1.7.0 — 分布式云代理与 Windows 客户端管理平台
 
 面向自有云服务器及 Windows 工作站的 **Controller + Cloud Agent + Windows Client + SOCKS5 节点池** 运维平台。
 将分散在 Linux / Windows 主机上的 SOCKS5 服务，统一到一个轻量的 Web 控制台中管理。系统提供节点注册、心跳、主机指标、凭据保护、远程配置/启停、批量操作、节点监测与规则导出。Go 标准库构建，前端已嵌入二进制，无需 Node.js、数据库或额外 Web 静态资源。
 
-> **产品边界（重要）**：v1.4 增加了容量感知的 PID 自动分配，v1.3 在 Windows Client 进程发现基础上加入每机独立 PID 配额（默认 8，可设 1～128）和客户端二次校验；v1.2 新增 Windows Client 进程发现、按 PID+启动时间绑定策略，以及可选 ProxyBridge 进程名规则执行。它**尚不具备**同名 `Client.exe` 不同 PID 走不同出口的透明代理能力，也不保证突破任何游戏的多开规则。默认客户端模式仅观察；ProxyBridge 只按**进程名**执行规则，并会拒绝发现的冲突配置。策略绑定与已启动代理引擎不等于实际出口已验证。
+> **v1.7 实验功能（可选）**：Windows Desktop 新增按 `PID + 进程启动时间` 对不同同名进程选择独立 SOCKS5 的 **TCP 透明代理实验引擎 `pidtcp`**。需要管理员运行和官方 WinDivert 2.2 x64 DLL/SYS。**UDP、DNS 不代理；进程归属失败、驱动退出、已有连接等情况下可能直连。没有 OS 级 Kill Switch，出口未经过真实 Windows 环境验证，不能用来承诺防泄漏。** 默认仍为 `observe`。详见 [实验模式及验收计划](docs/PID_TCP_EXPERIMENT.md)。
+
+> **产品边界（重要）**：v1.4 增加了容量感知的 PID 自动分配，v1.3 在 Windows Client 进程发现基础上加入每机独立 PID 配额（默认 8，可设 1～128）和客户端二次校验；v1.2 新增 Windows Client 进程发现、按 PID+启动时间绑定策略，以及可选 ProxyBridge 进程名规则执行。除新增加的未实机验证的实验性 TCP 引擎外，它**尚不具备**生产可用的同名 `Client.exe` 不同 PID 全协议安全隔离能力，也不保证突破任何游戏的多开规则。默认客户端模式仅观察；ProxyBridge 只按**进程名**执行规则，并会拒绝发现的冲突配置。策略绑定与已启动代理引擎不等于实际出口已验证。
 
 ## Git 源码仓库与构建
 
@@ -39,7 +41,7 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 | Windows Client 进程发现 / 节点策略 | **已实现** | 按 PID + 进程启动时间绑定，容量检查、版本同步、进程退出失效 |
 | 每台 Windows 机器代理 PID 配额 | **已实现（策略配额）** | 默认 8、可配置 1～128；Controller 原子校验、数据持久化、乐观锁、Client 二次校验；不等于尚未实现的网络内核强制隔离 |
 | 可选 ProxyBridge 进程名路由 | **代码已集成，未实机验收** | 检测同名冲突；仅可将同一可执行名的实例统一分流，实际出口未确认 |
-| Windows 同名 PID 独立透明代理 | **未实现** | 需要 PID 级 Windows 底层分流引擎及真实出口隔离验收 |
+| Windows 同名 PID 独立透明代理 | **TCP 实验实现，未实机验收** | PID+创建时间映射至独立 SOCKS5；UDP/DNS、漏流量防护及真实公网出口验证仍待完成 |
 | 服务器任意命令/远程桌面 | **不提供** | 此版管控代理服务与指标，不运行任意系统命令 |
 | 账号体系/RBAC/HA | **未实现** | 单管理员令牌、单主控部署；当前适用于个人/小型自建集群 |
 
@@ -60,6 +62,7 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 │   ├── control/                Agent 注册、认证、配置、历史与持久化
 │   ├── agent/                  Linux/Windows 出站心跳与状态执行
 │   ├── client/                 Windows Client 进程检测与路由执行适配器
+│   ├── pidtcp/                 Windows PID TCP 透明代理实验引擎
 │   ├── proxy/                  独立 SOCKS5 TCP/UDP 服务
 │   └── manager/                节点池、探测、本机进程和规划分配
 ├── web/                        自包含 Web 前端（HTML/CSS/JS）

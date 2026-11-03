@@ -32,6 +32,7 @@ type Settings struct {
 	Targets        string `json:"targets"`
 	Engine         string `json:"engine"`
 	ProxyBridgeCLI string `json:"proxyBridgeCli"`
+	WinDivertDir   string `json:"winDivertDir"`
 	PIDHardLimit   int    `json:"pidHardLimit"`
 	AutoConnect    bool   `json:"autoConnect"`
 }
@@ -92,8 +93,8 @@ func ValidateSettings(v Settings) error {
 
 func managerClientConfig(v Settings) (*managerClientConfigValue, error) {
 	// Validation without needing the actual proxy executable or a running agent.
-	if v.Engine != "observe" && v.Engine != "proxybridge" {
-		return nil, errors.New("运行模式仅支持 observe 或 proxybridge")
+	if v.Engine != "observe" && v.Engine != "proxybridge" && v.Engine != "pidtcp" {
+		return nil, errors.New("运行模式仅支持 observe、proxybridge 或 pidtcp（实验）")
 	}
 	targets := map[string]bool{}
 	for _, raw := range strings.Split(v.Targets, ";") {
@@ -252,7 +253,7 @@ func (s *Service) Start(enrollKey string) error {
 		defer close(done)
 		runErr := agent.Run(ctx, agent.Config{
 			Role: "client", Controller: cfg.Controller, Name: cfg.Name, DataDir: s.agentDir(), EnrollKey: strings.TrimSpace(enrollKey),
-			ClientEngine: cfg.Engine, ClientTargets: cfg.Targets, ProxyBridgeCLI: cfg.ProxyBridgeCLI, ClientPIDHardLimit: cfg.PIDHardLimit,
+			ClientEngine: cfg.Engine, ClientTargets: cfg.Targets, ProxyBridgeCLI: cfg.ProxyBridgeCLI, ClientWinDivertDir: cfg.WinDivertDir, ClientPIDHardLimit: cfg.PIDHardLimit,
 			OnConnection: func(ok bool, message string) {
 				s.mu.Lock()
 				defer s.mu.Unlock()

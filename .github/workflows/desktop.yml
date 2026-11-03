@@ -10,6 +10,7 @@ on:
       - 'internal/desktopcore/**'
       - 'internal/control/**'
       - 'internal/manager/**'
+      - 'internal/pidtcp/**'
       - 'go.mod'
       - '.github/workflows/desktop.yml'
   pull_request:

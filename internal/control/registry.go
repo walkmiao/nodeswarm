@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	AgentVersion         = "1.6.0"
+	AgentVersion         = "1.7.0"
 	DefaultMaxProxyPIDs  = 8
 	AbsoluteMaxProxyPIDs = 128
 )

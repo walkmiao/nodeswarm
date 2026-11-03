@@ -381,7 +381,7 @@ func main() {
 		}
 		if err := agent.Run(ctx, agent.Config{Controller: url, Name: display, EnrollKey: os.Getenv("NODE_MANAGER_ENROLL_KEY"), DataDir: agentDir,
 			AllowInsecureHTTP: os.Getenv("NODE_MANAGER_ALLOW_INSECURE_HTTP") == "1", Role: *mode,
-			ClientEngine: clientEngine, ProxyBridgeCLI: os.Getenv("NODE_MANAGER_PROXYBRIDGE_CLI"),
+			ClientEngine: clientEngine, ProxyBridgeCLI: os.Getenv("NODE_MANAGER_PROXYBRIDGE_CLI"), ClientWinDivertDir: os.Getenv("NODE_MANAGER_WINDIVERT_DIR"),
 			ClientTargets: os.Getenv("NODE_MANAGER_CLIENT_TARGETS"), ClientPIDHardLimit: hardPIDLimit}); err != nil {
 			log.Fatal(err)
 		}

@@ -22,7 +22,7 @@
 
 截至检查时公开文档的 `.pbprofile` 规则通过 `ProcessName` 和 `ProxyConfigId` 指向代理；虽然核心会解析并记录 PID，但这**不意味着提供了直接的 PID -> 多代理分配管理接口**。
 
-## 建议的最小改造点（尚未编写）
+## 架构演进与尚待验证项
 
 把“进程归属”与“进程名称路由”解耦，新增与具体应用无关的临时策略表：
 
@@ -61,3 +61,7 @@ ProxyBridge 仓库标称 MIT，WinDivert 和其他依赖有独立条款；正式
 - https://github.com/InterceptSuite/ProxyBridge/blob/master/Windows/src/pb_process.c
 - https://github.com/InterceptSuite/ProxyBridge/blob/master/Windows/src/pb_internal.h
 - https://reqrypt.org/windivert-doc.html
+
+## v1.7 implementation status
+
+The initial Go `internal/pidtcp` experiment implements per-PID/start-time TCP routing via WinDivert NETWORK capture and `GetExtendedTcpTable` ownership lookup. Unlike the process-name-only ProxyBridge adapter, it can represent different proxy nodes for two PIDs of `Client.exe`. It is *not* a general-purpose TCP/UDP transparent proxy yet, and Windows field verification remains outstanding. More details and limitations: [PID_TCP_EXPERIMENT.md](PID_TCP_EXPERIMENT.md).
