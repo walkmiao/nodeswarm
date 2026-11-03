@@ -1,73 +1,74 @@
-# NodeSwarm v1.1 架构与控制边界
+# NodeSwarm v1.2 architecture and control boundaries
 
-## 拓扑
+## Distributed topology
 
-```text
-                         管理员浏览器
-                                |
-                         HTTPS 443 (Caddy)
-                                |
-                  Controller (127.0.0.1:8088)
-                      Go HTTP API + embed Web
-                 节点库存 + Agent 注册 + 目标状态
-                              / | \\
-                     outbound HTTPS heartbeats
-                            /   |   \\
-                   Cloud Agent  Cloud Agent  Cloud Agent
-                    Linux x64    Linux arm64   Windows x64
-                       |              |           |
-               SOCKS5 TCP/UDP   SOCKS5 TCP/UDP  SOCKS5 TCP/UDP
-                       \_____________  ____________/
-                                     \/
-                          自有客户端主动连接代理出口
+```mermaid
+flowchart TB
+    Admin[Web Browser] -->|HTTPS / REST| Controller[Go Controller / embed Web]
+    Controller -->|Encrypted store: nodes, agents, policies, tokens| State[(Controller JSON state)]
+    Cloud1[Linux Cloud Agent] -->|Outbound HTTPS enroll + heartbeat| Controller
+    Cloud2[Windows Cloud Agent] -->|Outbound HTTPS enroll + heartbeat| Controller
+    Client[Windows Client Agent] -->|Outbound HTTPS inventory + policy heartbeat| Controller
+    Cloud1 -->|SOCKS5 TCP / UDP| Egress1[Proxy service A]
+    Cloud2 -->|SOCKS5 TCP / UDP| Egress2[Proxy service B]
+    Client -->|Optional application-name routing through installed ProxyBridge| Egress1
+    Client -->|Optional application-name routing through installed ProxyBridge| Egress2
 ```
 
-**Controller 不转发代理业务流量**：业务流量直达各自云服务器 Agent 所监听的 SOCKS5 端口；控制流和数据流分离，避免主控成为流量瓶颈。
+**Control plane:** authenticated 7-second outbound HTTPS heartbeats, desired `revision`, observed runtime; Controller is not a packet relay.
 
-## 设计决策
+**Data plane:** a SOCKS5 client connects directly to a Cloud Agent's public proxy listener. The service does not encrypt the proxy payload. Use ACLs and cloud firewalls to restrict source IPs. UDP needs its fixed relay port range permitted inbound.
 
-1. **Agent 出站控制通道**：无需从公网主动向 Agent 管理端口建立连接。客户端注册后每约 7 秒 POST 心跳，以 TLS + Agent 独立令牌认证。
-2. **目标状态 vs 实际状态**：管理员调整配置或启停只增加 `revision`；Agent 按 `revision` 应用，回报 `runtime.revision/status/error`，可从 API 对比识别是否生效。配置操作返回成功并不代表 Agent 已应用。
-3. **断联保守策略**：网络或主控失联 10 分钟后 Agent 自动停止已开启的代理监听，恢复联通后重新按目标状态应用。对已撤销凭据的 Agent，下一次收到 HTTP 401 会退出并停止代理。
-4. **中央存储**：控制器使用加密 JSON 文件，持久化 Agent 注册、令牌哈希、加密 SOCKS5 密码、节点元数据与历史采样。临时本机进程规划不持久化。所有文件按最小权限访问。
-5. **独立账号认证**：Admin 令牌仅用于管理 API；Enrollment 令牌用于首次注册；Agent 独立令牌用于心跳。请避免通过反向代理公开日志记录 Authorization 请求头。
-6. **单节点隔离**：每台 Agent 的配置独立，监听失败只影响该 Agent。管理端批量操作按 ID 分开记录结果，不提供执行任意 shell 命令的权限。
-7. **代理安全策略**：SOCKS5 强制用户名/密码、支持 `AllowedCIDRs`，默认屏蔽连接私有/回环/保留目标地址；提供并发连接限制。SOCKS5 本身不提供传输加密。
+## Registry and agent roles
 
-## 核心数据模型
+The Go binary supports three explicit run modes: `controller`, `agent` (Cloud SOCKS5 service), and `client` (Windows process monitor). Separate install scripts and process lifecycles are provided; they currently share one Go codebase and embedded Web assets. Registered agents persist a `kind`: `cloud` or `client`. Legacy v1.1 agents without a kind load as `cloud`. Each agent role uses separate credentials in its own data directory, and a credential registered for one role cannot be reused by the other role.
 
-- `AgentView`：机器 ID、名称、版本、平台、最近心跳、CPU/内存历史、运行状态、最近日志、期望代理配置和 revision。
-- `ProxyConfig`：监听 IP、端口、公网地址、账号、加密持久化密码、TCP/UDP 能力、允许来源 CIDR、容量和最大连接数。
-- `ProxyRuntime`：真实启动状态、监听地址、连接数、累计字节、最后错误、已应用版本。
-- `Node`：代理节点库存记录（手工添加或关联 Agent 自动同步）。
-- `Assignment`：本机 PID + 进程创建标识到节点的**规划关系**，非系统级路由状态。
+### Cloud Agent
 
-## API 摘要
+1. Register one-use credential and report metrics to Controller.
+2. Fetch desired `ProxyConfig` and monotonic revision.
+3. Start/stop/restart the embedded Go SOCKS5 TCP+UDP service.
+4. Report status, last error, listen address, revision, connection counts and bytes.
+5. Stop the service after prolonged control-plane loss (fail-closed after 10 minutes), or immediately after a revoked token yields HTTP 401.
 
-| 方法 | URL | 鉴权 | 功能 |
-|---|---|---|---|
-| GET | `/api/health` | 无 | 存活检查，仅公开基础状态 |
-| GET | `/api/auth/check` | Admin | 管理员凭据校验 |
-| GET | `/api/dashboard` | Admin | 总览完整状态 |
-| GET | `/api/agents` | Admin | 所有 Agent |
-| GET | `/api/agents/{id}` | Admin | Agent 详情 |
-| PUT | `/api/agents/{id}/config` | Admin | 修改目标代理配置 |
-| POST | `/api/agents/{id}/action` | Admin | `start / stop / restart` |
-| POST | `/api/agents/batch` | Admin | 对选定 Agent 批量发送指令 |
-| DELETE | `/api/agents/{id}` | Admin | 注销凭据（只允许服务已停止时） |
-| GET | `/api/agents/{id}/profile` | Admin | 导出应用名分流的 ProxyBridge 规则，**含敏感明文** |
-| POST | `/api/agent/enroll` | Enrollment | Agent 首次注册 |
-| POST | `/api/agent/heartbeat` | Agent Token | 上报指标/运行状态与拉取配置 |
-| GET | `/api/state` | Admin | 代理节点和本机规划状态 |
-| POST | `/api/nodes/{id}/probe` | Admin | 测试 TCP SOCKS5 CONNECT |
-| POST | `/api/nodes/probe-batch` | Admin | 有并发上限的批量探测（最多32个） |
-| GET / POST / DELETE | `/api/enrollments` | Admin | 一次性密钥列表/签发/撤销（DELETE 含 id） |
-| GET | `/api/alerts` | Admin | 实时健康告警 |
-| POST / DELETE | `/api/alerts/mute` | Admin | 临时静音与恢复 |
+### Windows Client Agent
 
-## 未实现且不应误解的能力
+1. Register as `kind=client` and scan chosen target executable names.
+2. Return inventory `{pid, startTime, name, path}` limited to 128 items (12-second cache).
+3. Admin chooses bindings via `PUT /api/clients/{id}/bindings`. Controller validates the *latest observed* process identity, enabled/valid node, and per-node capacity across clients.
+4. Controller returns a `ClientPolicy` with only the bound SOCKS5 endpoints and credentials to the authenticated Client Agent, never to the admin dashboard.
+5. Client executes **observe** (default, no traffic changed) or the optional *by-process-NAME* ProxyBridge integration. Conflicts are rejected instead of silently routing incorrectly; the engine's status never claims PID-level enforcement.
+6. Client reports per-binding route state. Invalidated PID identities are pruned from Controller policy on a fresh successful process inventory.
 
-- 此 Agent 是**云端 SOCKS5 服务端**，不是 Windows 游戏进程的透明代理客户端。
-- 导出 ProxyBridge `.pbprofile` 只有应用名规则，不能将同一 `Client.exe` 的不同 PID 分配到不同出口。
-- UDP ASSOCIATE 已支持固定端口池和公网 BND 地址通告；当前仅完成本机联调，尚未进行真实云公网 UDP 数据包往返验收。
-- 目前没有 RBAC、二次认证、分布式协调/HA、节点自动更新或可执行代码分发能力。不要将其当作可任意远程操控主机的 RMM 平台。
+## Persistence
+
+- `registry.key` + `agents.json`: Cloud Agent and Client identity, hashed agent tokens, AES-GCM encrypted cloud SOCKS5 credentials, desired revisions, Client bindings, observed status.
+- `local.key` + `nodes.json`: encrypted SOCKS5 node inventory and audit events.
+- `alert-mutes.json`: muted alert identifiers and deadlines.
+- Client workstation `agent.json`: unique agent ID, token, Controller and registered role; saved via atomic replace at mode 0600.
+- `admin.token` / `enroll.token`: Administrator and legacy enrollment keys, separate from per-agent credentials.
+
+All file permissions and backups are the deployer's responsibility. This is a **single-Controller local-file system**, not a horizontally scalable multi-controller database/HA cluster.
+
+## Security
+
+- HTTPS for remote control channels; Agent heartbeat and admin authorization use different credentials.
+- Only the authenticated target Client receives its bound node credentials, over HTTPS.
+- No shell command, remote desktop or arbitrary code execution API is exposed.
+- Windows Client's default `observe` backend is non-invasive. The optional ProxyBridge backend runs with explicit binary path and fixed CLI arguments, writes its profile only inside the restricted data directory, and exposes status `process_name_unverified`.
+- Neither a stored binding nor an application-name rule proves game traffic egress; real-PID transparent routing, DNS/IPv6 escape tests, game compatibility and public VPS network tests require actual Windows host verification.
+
+## Main code and API
+
+| Component | Path | Responsibility |
+|---|---|---|
+| Controller routing | `main.go`, `api_agents.go`, `api_clients.go` | Authentication, REST and desired state |
+| Persistent registry | `internal/control/` | Enrollment, roles, bindings, status and encrypted credentials |
+| Cloud and Client heartbeat | `internal/agent/` | Remote communication and agent lifecycle |
+| Windows Client routing adapter | `internal/client/` | Inventory and optional ProxyBridge CLI profiles |
+| Cloud SOCKS5 | `internal/proxy/` | Authenticated TCP and UDP service |
+| Proxy nodes and health tests | `internal/manager/`, `internal/monitor/` | Inventory and connectivity checks |
+| Web UI | `web/` | Dashboard, cloud fleet, client fleet, alerts and settings |
+| Runtime installations | `deploy/` | Linux systemd, Windows scheduled tasks, Docker examples |
+
+See `CLIENT_AGENT.md` for operational detail, explicit route statuses and Windows verification steps.

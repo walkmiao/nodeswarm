@@ -582,6 +582,22 @@ func (p *Server) associateUDP(c net.Conn) {
 	peers := map[string]*peer{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	// Tear down peer UDP sockets immediately on service cancellation instead
+	// of waiting for their 35s receive deadlines during remote restart.
+	stopWatch := make(chan struct{})
+	go func() {
+		select {
+		case <-p.ctx.Done():
+			mu.Lock()
+			for _, peer := range peers {
+				_ = peer.conn.Close()
+			}
+			mu.Unlock()
+			_ = sock.Close()
+		case <-stopWatch:
+		}
+	}()
+	defer close(stopWatch)
 	defer func() {
 		mu.Lock()
 		for _, v := range peers {

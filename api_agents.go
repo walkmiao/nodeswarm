@@ -115,17 +115,19 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 			fail(w, 404, err)
 			return
 		}
+		result.Client = a.clientPolicy(hb.ID)
 		send(w, 200, result)
 	})
 	mux.HandleFunc("GET /api/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		nodes, assign, events := a.store.Snapshot()
-		agents := a.registry.List()
+		agents := a.listKind("cloud")
+		clients := a.listKind("client")
 		alerts, count := a.alerts.List(ops.Evaluate(agents, nodes, time.Now()), time.Now())
-		send(w, 200, map[string]any{"nodes": nodes, "assignments": assign, "events": events, "agents": agents, "alerts": alerts, "activeAlerts": count, "enrollments": a.registry.ListEnrollments(), "proxyEngine": "client_transparent_proxy_not_integrated", "serverTime": time.Now().UTC().Format(time.RFC3339)})
+		send(w, 200, map[string]any{"nodes": nodes, "assignments": assign, "events": events, "agents": agents, "clients": clients, "alerts": alerts, "activeAlerts": count, "enrollments": a.registry.ListEnrollments(), "proxyEngine": "client_transparent_proxy_not_integrated", "serverTime": time.Now().UTC().Format(time.RFC3339)})
 	})
 	mux.HandleFunc("GET /api/alerts", func(w http.ResponseWriter, r *http.Request) {
 		nodes, _, _ := a.store.Snapshot()
-		alerts, count := a.alerts.List(ops.Evaluate(a.registry.List(), nodes, time.Now()), time.Now())
+		alerts, count := a.alerts.List(ops.Evaluate(a.listKind("cloud"), nodes, time.Now()), time.Now())
 		send(w, 200, map[string]any{"alerts": alerts, "active": count})
 	})
 	mux.HandleFunc("POST /api/alerts/mute", func(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +141,7 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 		}
 		nodes, _, _ := a.store.Snapshot()
 		found := false
-		for _, alert := range ops.Evaluate(a.registry.List(), nodes, time.Now()) {
+		for _, alert := range ops.Evaluate(a.listKind("cloud"), nodes, time.Now()) {
 			if alert.ID == in.ID {
 				found = true
 				break
@@ -165,7 +167,7 @@ func (a *app) agentsRoutes(mux *http.ServeMux) {
 		send(w, 200, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, r *http.Request) {
-		send(w, 200, map[string]any{"agents": a.registry.List()})
+		send(w, 200, map[string]any{"agents": a.listKind("cloud")})
 	})
 	mux.HandleFunc("GET /api/agents/{id}", func(w http.ResponseWriter, r *http.Request) {
 		v, ok := a.registry.Find(r.PathValue("id"))

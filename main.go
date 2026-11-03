@@ -68,7 +68,7 @@ func decode(r *http.Request, out any) error {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		send(w, 200, map[string]any{"status": "ok", "mode": "controller", "version": "1.1.0"})
+		send(w, 200, map[string]any{"status": "ok", "mode": "controller", "version": "1.2.0"})
 	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		nodes, as, ev := a.store.Snapshot()
@@ -78,6 +78,7 @@ func (a *app) routes() http.Handler {
 		send(w, 200, map[string]any{"ok": true, "role": "administrator"})
 	})
 	a.agentsRoutes(mux)
+	a.clientRoutes(mux)
 	mux.HandleFunc("GET /api/processes", func(w http.ResponseWriter, r *http.Request) {
 		procs, err := manager.ListProcesses()
 		if err != nil {
@@ -330,7 +331,7 @@ func readOrCreateSecret(dir, filename, envName string) (string, error) {
 	return token, err
 }
 func main() {
-	mode := flag.String("mode", "controller", "controller or agent")
+	mode := flag.String("mode", "controller", "controller, agent (cloud SOCKS5), or client (Windows process monitor)")
 	controller := flag.String("controller", "", "controller HTTPS URL in agent mode")
 	name := flag.String("name", "", "agent display name")
 	listen := flag.String("listen", "", "controller bind address (default 127.0.0.1:8088)")
@@ -346,7 +347,7 @@ func main() {
 		}
 		dataDir = filepath.Join(base, "NodeConsole")
 	}
-	if *mode == "agent" {
+	if *mode == "agent" || *mode == "client" {
 		url := *controller
 		if url == "" {
 			url = os.Getenv("NODE_MANAGER_CONTROLLER")
@@ -367,8 +368,12 @@ func main() {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		log.Printf("Starting node agent %q for %s", display, url)
-		if err := agent.Run(ctx, agent.Config{Controller: url, Name: display, EnrollKey: os.Getenv("NODE_MANAGER_ENROLL_KEY"), DataDir: agentDir, AllowInsecureHTTP: os.Getenv("NODE_MANAGER_ALLOW_INSECURE_HTTP") == "1"}); err != nil {
+		log.Printf("Starting %s %q for %s", *mode, display, url)
+		clientEngine := os.Getenv("NODE_MANAGER_CLIENT_ENGINE")
+		if err := agent.Run(ctx, agent.Config{Controller: url, Name: display, EnrollKey: os.Getenv("NODE_MANAGER_ENROLL_KEY"), DataDir: agentDir,
+			AllowInsecureHTTP: os.Getenv("NODE_MANAGER_ALLOW_INSECURE_HTTP") == "1", Role: *mode,
+			ClientEngine: clientEngine, ProxyBridgeCLI: os.Getenv("NODE_MANAGER_PROXYBRIDGE_CLI"),
+			ClientTargets: os.Getenv("NODE_MANAGER_CLIENT_TARGETS")}); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -418,7 +423,7 @@ func main() {
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && os.Getenv("NODE_MANAGER_ALLOW_PUBLIC_LISTEN") != "1" {
 		log.Fatal("refusing public HTTP binding; use Caddy/Nginx HTTPS reverse proxy to 127.0.0.1:8088, or explicitly set NODE_MANAGER_ALLOW_PUBLIC_LISTEN=1 for secure private networks")
 	}
-	fmt.Printf("NodeSwarm v1.1: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
+	fmt.Printf("NodeSwarm v1.2: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
 	srv := &http.Server{Addr: addr, Handler: (&app{store: store, registry: registry, alerts: alerts, adminToken: adminToken, enrollKey: enrollKey}).routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 75 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

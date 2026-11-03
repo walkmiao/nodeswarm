@@ -1,5 +1,19 @@
 # NodeSwarm Change Log
 
+## v1.2.0 - 2026-11-03
+
+### Features
+- Add independent Windows Client Agent role and authenticated process inventory heartbeats.
+- Add per-PID/start-time binding policy APIs and capacity/identity checks across workstations.
+- Deliver proxy endpoint credentials only to the authenticated target Client; redact administrative views.
+- Add explicit `observe` client backend and optional ProxyBridge CLI app-name backend with rejection of conflicting same-name PID routes.
+- Add Windows Client fleet page, process binding drawer, deployment scripts, and end-to-end UI/integration tests.
+- Harden client credential file writes and role separation; prompt UDP-peer sockets to close during server restart.
+
+### Limitations
+- ProxyBridge app-name backend does **not** support independent SOCKS5 endpoints for same-name PIDs and is not Windows-host verified here.
+- Real public VPS, UDP relay egress, and game-specific compatibility checks remain to be performed on target machines.
+
 ## v1.1.0 - 2026-11-03
 
 ### Features

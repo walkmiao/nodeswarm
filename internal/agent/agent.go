@@ -18,11 +18,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/walkmiao/nodeswarm/internal/client"
 	"github.com/walkmiao/nodeswarm/internal/control"
 	"github.com/walkmiao/nodeswarm/internal/proxy"
 )
 
 type Config struct {
+	Role              string // agent/cloud or client
+	ClientEngine      string
+	ProxyBridgeCLI    string
+	ClientTargets     string
 	Controller        string
 	Name              string
 	EnrollKey         string
@@ -30,6 +35,7 @@ type Config struct {
 	AllowInsecureHTTP bool
 }
 type credential struct {
+	Role       string `json:"role,omitempty"`
 	ID         string `json:"id"`
 	Token      string `json:"token"`
 	Controller string `json:"controller"`
@@ -46,6 +52,7 @@ type daemon struct {
 	lastContact  time.Time
 	disconnected bool
 	cpu          cpuSampler
+	workstation  *client.Manager
 }
 
 func (d *daemon) note(level, message string) {
@@ -109,19 +116,31 @@ func loadCredential(dir string) (credential, error) {
 	return c, nil
 }
 func saveCredential(dir string, c credential) error {
-	b, e := json.MarshalIndent(c, "", "  ")
-	if e != nil {
-		return e
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
 	}
-	f, e := os.OpenFile(filepath.Join(dir, "agent.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if e != nil {
-		return e
+	f, err := os.CreateTemp(dir, ".agent-*.tmp")
+	if err != nil {
+		return err
 	}
-	if _, e = f.Write(b); e != nil {
+	defer os.Remove(f.Name())
+	if err = f.Chmod(0600); err != nil {
 		f.Close()
-		return e
+		return err
 	}
-	return f.Close()
+	if _, err = f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), filepath.Join(dir, "agent.json"))
 }
 func validateController(c Config) error {
 	u, e := url.Parse(c.Controller)
@@ -147,7 +166,21 @@ func Run(ctx context.Context, c Config) error {
 	if err := os.MkdirAll(c.DataDir, 0700); err != nil {
 		return err
 	}
+	if c.Role == "" {
+		c.Role = "agent"
+	}
+	if c.Role != "agent" && c.Role != "client" {
+		return errors.New("unsupported agent role")
+	}
 	d := &daemon{cfg: c, client: &http.Client{Timeout: 12 * time.Second}, started: time.Now(), lastContact: time.Now()}
+	if c.Role == "client" {
+		wm, err := client.New(client.Config{DataDir: c.DataDir, Engine: c.ClientEngine, ProxyBridgeCLI: c.ProxyBridgeCLI, Targets: c.ClientTargets})
+		if err != nil {
+			return err
+		}
+		d.workstation = wm
+		defer d.workstation.Stop()
+	}
 	cr, err := loadCredential(c.DataDir)
 	if errors.Is(err, os.ErrNotExist) {
 		if c.EnrollKey == "" {
@@ -158,14 +191,18 @@ func Run(ctx context.Context, c Config) error {
 			ID    string `json:"id"`
 			Token string `json:"token"`
 		}
-		enroll := control.EnrollInput{Name: c.Name, Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Version: control.AgentVersion}
+		kind := "cloud"
+		if c.Role == "client" {
+			kind = "client"
+		}
+		enroll := control.EnrollInput{Kind: kind, Name: c.Name, Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Version: control.AgentVersion}
 		ctxReq, cancel := context.WithTimeout(ctx, 15*time.Second)
 		err = d.request(ctxReq, "/api/agent/enroll", c.EnrollKey, enroll, &registered)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("agent enrollment failed: %w", err)
 		}
-		cr = credential{ID: registered.ID, Token: registered.Token, Controller: c.Controller}
+		cr = credential{ID: registered.ID, Token: registered.Token, Controller: c.Controller, Role: c.Role}
 		if err = saveCredential(c.DataDir, cr); err != nil {
 			return err
 		}
@@ -175,6 +212,14 @@ func Run(ctx context.Context, c Config) error {
 	if cr.Controller != c.Controller {
 		return errors.New("agent credential belongs to a different controller; use a different data directory")
 	}
+	if cr.Role == "" {
+		cr.Role = "agent"
+	} // pre-v1.2 cloud credentials
+	if cr.Role != c.Role {
+		return errors.New("credential was registered for a different role; use a separate data directory")
+	}
+	// The credential file must not be reused by a different agent role.
+	// Controller stores the role at enrollment and rejects role-specific actions.
 	d.creds = cr
 	d.note("success", "Agent connected: "+c.Name)
 	ticker := time.NewTicker(7 * time.Second)
@@ -189,6 +234,9 @@ func Run(ctx context.Context, c Config) error {
 			d.note("warning", fmt.Sprintf("heartbeat failed: %.250s", err.Error()))
 			if time.Since(d.lastContact) > 10*time.Minute && !d.disconnected {
 				d.service.Stop()
+				if d.workstation != nil {
+					d.workstation.Stop()
+				}
 				d.disconnected = true
 				d.note("warning", "Controller unavailable for over 10 minutes; SOCKS5 service stopped (fail-closed)")
 			}
@@ -208,11 +256,29 @@ func (d *daemon) heartbeat(ctx context.Context) error {
 	metrics := d.cpu.readMetrics()
 	metrics.At = time.Now().UTC().Format(time.RFC3339)
 	metrics.UptimeSeconds = uint64(time.Since(d.started).Seconds())
-	hb := control.Heartbeat{ID: d.creds.ID, Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Version: control.AgentVersion, Metrics: metrics, Runtime: d.service.Snapshot(), Logs: d.recentLogs()}
+	hb := control.Heartbeat{ID: d.creds.ID, Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Version: control.AgentVersion,
+		Metrics: metrics, Runtime: d.service.Snapshot(), Logs: d.recentLogs()}
+	if d.workstation != nil {
+		current := d.workstation.Observe()
+		hb.Client = &current
+	}
 	var desired control.HeartbeatResponse
 	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	if err := d.request(reqCtx, "/api/agent/heartbeat", d.creds.Token, hb, &desired); err != nil {
+		return err
+	}
+	if d.workstation != nil {
+		if err := d.workstation.Apply(desired.Client); err != nil {
+			d.note("error", "Client policy apply failed: "+err.Error())
+		}
+		// Immediate acknowledgement carries the observed engine status.
+		updated := hb
+		current := d.workstation.Observe()
+		updated.Client = &current
+		nextCtx, nextCancel := context.WithTimeout(ctx, 12*time.Second)
+		err := d.request(nextCtx, "/api/agent/heartbeat", d.creds.Token, updated, nil)
+		nextCancel()
 		return err
 	}
 	prev := d.service.Snapshot()

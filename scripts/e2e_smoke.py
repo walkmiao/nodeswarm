@@ -64,6 +64,30 @@ def run():
             d=wait_for(lambda x:x['agents'][0]['runtime']['status']=='running' and x['agents'][0]['runtime']['revision']==1)
             assert any(n.get('managedAgentId')==agentID for n in d['nodes'])
             print('PASS controller config -> Agent SOCKS5 startup + inventory sync')
+            # Real NodeSwarm client process in observe mode. The target is a
+            # real Linux sleep process, exercising the same registration,
+            # inventory and policy flow without asserting Windows interception.
+            import shutil
+            unique_sleep=base/'nswkr_e2e'
+            shutil.copy('/bin/sleep',unique_sleep)
+            unique_sleep.chmod(0o755)
+            sleeper=subprocess.Popen([str(unique_sleep),'70']);ps.append(sleeper)
+            code,clientGrant=http(url,'/api/enrollments','POST',admin,{'label':'e2e-windows-client','ttlMinutes':10})
+            assert code==201,(code,clientGrant)
+            client_env={**os.environ,'NODE_MANAGER_CONTROLLER':url,'NODE_MANAGER_ENROLL_KEY':clientGrant['token'],
+                'NODE_MANAGER_AGENT_NAME':'E2E-Client','NODE_MANAGER_AGENT_DATA':str(base/'client'),
+                'NODE_MANAGER_CLIENT_ENGINE':'observe','NODE_MANAGER_CLIENT_TARGETS':'nswkr_e2e'}
+            clientProc=subprocess.Popen([BIN,'-mode','client'],env=client_env,stdout=open('/tmp/nc-e2e-client.log','w'),stderr=subprocess.STDOUT);ps.append(clientProc)
+            d=wait_for(lambda x:len(x['clients'])==1 and any(p['pid']==sleeper.pid for p in x['clients'][0].get('client',{}).get('processes',[])),30)
+            client=d['clients'][0]
+            proc=next(p for p in client['client']['processes'] if p['pid']==sleeper.pid)
+            code,reply=http(url,'/api/clients/'+client['id']+'/bindings','PUT',admin,{'bindings':[{'pid':proc['pid'],'startTime':proc['startTime'],'nodeId':d['nodes'][0]['id']}]})
+            assert code==200,(code,reply)
+            d=wait_for(lambda x:x['clients'][0]['client']['revision']==1 and bool(x['clients'][0]['client'].get('routes')),30)
+            route=d['clients'][0]['client']['routes'][0]
+            assert route['status']=='planned_only',route
+            assert http(url,'/api/clients/'+client['id']+'/bindings','PUT',admin,{'bindings':[{'pid':proc['pid'],'startTime':'reused-PID','nodeId':d['nodes'][0]['id']} ]})[0]==409
+            print('PASS real client process discovery -> binding -> agent acknowledgement, with no false enforcement claim')
             with socket.create_connection(('127.0.0.1',socksPort),timeout=3) as s:
                 s.settimeout(3);s.sendall(b'\x05\x01\x02');assert s.recv(2)==b'\x05\x02'
                 user=b'node';password=b'e2e_long_strong_password'

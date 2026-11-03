@@ -1,9 +1,9 @@
-# NodeSwarm v1.1 — 云端代理节点集中管理系统
+# NodeSwarm v1.2 — 分布式云代理与 Windows 客户端管理平台
 
-面向自有云服务器的 **Controller + Cloud Agent + SOCKS5 节点池** 运维平台。
+面向自有云服务器及 Windows 工作站的 **Controller + Cloud Agent + Windows Client + SOCKS5 节点池** 运维平台。
 将分散在 Linux / Windows 主机上的 SOCKS5 服务，统一到一个轻量的 Web 控制台中管理。系统提供节点注册、心跳、主机指标、凭据保护、远程配置/启停、批量操作、节点监测与规则导出。Go 标准库构建，前端已嵌入二进制，无需 Node.js、数据库或额外 Web 静态资源。
 
-> **产品边界（重要）**：v1.1 是可以真实运行的 **云端 SOCKS5 服务器与节点管理平台**。它**不是**可让同名 `Client.exe` 的不同 PID 走不同出口的 Windows 透明代理客户端，也不保证突破任何游戏的多开规则。界面中的“本机进程分配”明确属于 **规划**；导出的 ProxyBridge 配置只按 **进程名** 分流。不能把规则导出或规划关系理解为真实 PID 级代理已生效。
+> **产品边界（重要）**：v1.2 新增 Windows Client 进程发现、按 PID+启动时间绑定策略，以及可选 ProxyBridge 进程名规则执行。它**尚不具备**同名 `Client.exe` 不同 PID 走不同出口的透明代理能力，也不保证突破任何游戏的多开规则。默认客户端模式仅观察；ProxyBridge 只按**进程名**执行规则，并会拒绝发现的冲突配置。策略绑定与已启动代理引擎不等于实际出口已验证。
 
 ## Git 源码仓库与构建
 
@@ -25,7 +25,7 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 
 | 能力 | v1.1 状态 | 说明 |
 |---|---|---|
-| Web 管理端 | **已实现** | 登录、总览、节点池、Agent 列表/详情、事件、进程规划、设置 |
+| Web 管理端 | **已实现** | 登录、总览、节点池、Cloud Agent、Windows Client、告警及事件 |
 | 多云主机 Agent | **已实现** | Linux amd64/arm64，Windows amd64；Agent 主动出站连接，主控集中查看 |
 | 集中配置与批量启停 | **已实现** | 配置、启动、停止、重启指令经心跳同步；在线指令通常数秒生效 |
 | 远端 SOCKS5 服务 | **已实现** | 用户名密码认证、TCP CONNECT、UDP ASSOCIATE/中继（可设固定 UDP 端口池）、并发限制、IP 白名单 |
@@ -36,7 +36,9 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 | 健康告警与静音 | **已实现** | 离线、代理异常、配置待确认、高 CPU/内存、节点即将到期；支持静音 1～168 小时 |
 | 固定 UDP 中继端口池 | **已实现** | 可配置 `udpPortStart`～`udpPortEnd`（最多 128 个），可按云安全组固定放行 |
 | ProxyBridge 规则导出 | **已实现** | 产生 `.pbprofile`，按应用名路由，文件含敏感代理凭据 |
-| Windows 同名 PID 独立透明代理 | **未实现** | 需要 Windows 分流引擎及真实出口隔离验收 |
+| Windows Client 进程发现 / 节点策略 | **已实现** | 按 PID + 进程启动时间绑定，容量检查、版本同步、进程退出失效 |
+| 可选 ProxyBridge 进程名路由 | **代码已集成，未实机验收** | 检测同名冲突；仅可将同一可执行名的实例统一分流，实际出口未确认 |
+| Windows 同名 PID 独立透明代理 | **未实现** | 需要 PID 级 Windows 底层分流引擎及真实出口隔离验收 |
 | 服务器任意命令/远程桌面 | **不提供** | 此版管控代理服务与指标，不运行任意系统命令 |
 | 账号体系/RBAC/HA | **未实现** | 单管理员令牌、单主控部署；当前适用于个人/小型自建集群 |
 
@@ -51,10 +53,12 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 ```text
 .
 ├── main.go                     Controller HTTP/Web 与运行模式
+├── api_clients.go              Windows Client 策略及进程管理 API
 ├── api_agents.go               远程 Agent 管理 REST API
 ├── internal/
 │   ├── control/                Agent 注册、认证、配置、历史与持久化
 │   ├── agent/                  Linux/Windows 出站心跳与状态执行
+│   ├── client/                 Windows Client 进程检测与路由执行适配器
 │   ├── proxy/                  独立 SOCKS5 TCP/UDP 服务
 │   └── manager/                节点池、探测、本机进程和规划分配
 ├── web/                        自包含 Web 前端（HTML/CSS/JS）
@@ -100,6 +104,22 @@ $env:NODE_MANAGER_PORT = '8188'
 ```
 
 默认只监听本机回环地址。**不要为了远程访问直接将未加 TLS 的 8088 端口暴露到互联网。**
+
+## v1.2 新增：Windows Client Agent 和真实进程策略同步
+
+现在程序支持 `-mode client`。Windows 设备在接入后可将匹配 `NODE_MANAGER_CLIENT_TARGETS` 的真实目标进程（默认 `Client.exe`）上报到 **Windows 客户端** 页面。管理员能在该页面按 PID 和进程启动时间选择 SOCKS5 节点；Controller 对客户端绑定容量统一计数、加密保存节点凭据，并通过独立凭据的 HTTPS 心跳将策略发送到相应机器。
+
+Windows 客户端安装（管理员 PowerShell，先执行 `make win` 或使用发行包）：
+
+```powershell
+.\deploy\windows\install-client.ps1
+notepad "$env:ProgramData\NodeSwarmClient\client.env"
+Start-ScheduledTask -TaskName NodeSwarmClient
+```
+
+默认 `NODE_MANAGER_CLIENT_ENGINE=observe` 只执行进程发现和策略回报，**不会拦截网络**。如果自行安装官方 ProxyBridge CLI，可以配置 `proxybridge` 模式，仅允许不冲突的 **应用名级 SOCKS5 路由**。由于 ProxyBridge 的规则不是按 PID 绑定，发现同名进程需分别使用不同节点时会拒绝执行，以免将错误配置标记为成功。真实 Windows 驱动/游戏流量、跨公网出口、DNS/IPv6 防泄漏还需要在实际设备上验收。
+
+完整步骤参见 [`docs/CLIENT_AGENT.md`](docs/CLIENT_AGENT.md)。
 
 ## v1.1 新增：云端令牌、告警和 UDP 端口池
 

@@ -31,3 +31,15 @@ td{font-size:13px;line-height:1.45}
 .tag,.table-actions .btn{font-size:11px}
 .nav-item .nav-badge{font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+/* v1.2: Windows fleet / process policy management */
+.client-drawer{width:min(900px,100%)}
+.client-drawer .drawer-content{padding:24px 28px}
+.client-drawer .drawer-section .table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:9px}
+.client-drawer td{vertical-align:middle;min-width:130px}
+.client-drawer td:first-child{min-width:245px}
+.client-drawer td:last-child{min-width:190px}
+.client-drawer .client-node-select{min-width:175px;width:100%;max-width:310px;min-height:36px}
+.client-drawer .status{white-space:normal;line-height:1.4;display:inline-flex;max-width:240px;overflow-wrap:anywhere}
+.client-drawer .client-status-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:15px}
+.client-drawer .client-status-row .muted{font-size:11px;margin-left:auto}
+@media(max-width:760px){.client-drawer{width:100%}.client-drawer .drawer-content{padding:16px}.client-drawer .client-status-row .muted{margin-left:0}}

@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const AgentVersion = "1.1.0"
+const AgentVersion = "1.2.0"
 
 type ProxyConfig struct {
 	Enabled        bool     `json:"enabled"`
@@ -64,31 +64,78 @@ type AgentLog struct {
 	Level   string `json:"level"`
 	Message string `json:"message"`
 }
+
+// ClientProcess is an observed process identity; startTime prevents PID-reuse errors.
+// It is telemetry, not a guarantee of proxy routing.
+type ClientProcess struct {
+	PID       int    `json:"pid"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	StartTime string `json:"startTime"`
+}
+type ClientBinding struct {
+	PID       int    `json:"pid"`
+	StartTime string `json:"startTime"`
+	Name      string `json:"name"`
+	NodeID    string `json:"nodeId"`
+}
+type ClientEndpoint struct {
+	NodeID   string `json:"nodeId"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+type ClientPolicy struct {
+	Revision  int64            `json:"revision"`
+	Bindings  []ClientBinding  `json:"bindings"`
+	Endpoints []ClientEndpoint `json:"endpoints"`
+}
+type ClientRoute struct {
+	PID       int    `json:"pid"`
+	StartTime string `json:"startTime"`
+	NodeID    string `json:"nodeId"`
+	Status    string `json:"status"`
+	Detail    string `json:"detail,omitempty"`
+}
+type ClientSnapshot struct {
+	Processes  []ClientProcess `json:"processes"`
+	Routes     []ClientRoute   `json:"routes"`
+	Backend    string          `json:"backend"`
+	Revision   int64           `json:"revision"`
+	Error      string          `json:"error,omitempty"`
+	ScanError  string          `json:"scanError,omitempty"`
+	ObservedAt string          `json:"observedAt"`
+}
 type AgentView struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Hostname     string       `json:"hostname"`
-	OS           string       `json:"os"`
-	Arch         string       `json:"arch"`
-	Version      string       `json:"version"`
-	ObservedIP   string       `json:"observedIp"`
-	Status       string       `json:"status"`
-	RegisteredAt string       `json:"registeredAt"`
-	DesiredAt    string       `json:"desiredAt,omitempty"`
-	LastSeen     string       `json:"lastSeen"`
-	LastError    string       `json:"lastError"`
-	Desired      ProxyConfig  `json:"desired"`
-	Revision     int64        `json:"revision"`
-	Runtime      ProxyRuntime `json:"runtime"`
-	Metrics      Metrics      `json:"metrics"`
-	History      []Metrics    `json:"history"`
-	Logs         []AgentLog   `json:"logs"`
+	Kind           string          `json:"kind"`
+	Client         ClientSnapshot  `json:"client"`
+	ClientBindings []ClientBinding `json:"clientBindings"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Hostname       string          `json:"hostname"`
+	OS             string          `json:"os"`
+	Arch           string          `json:"arch"`
+	Version        string          `json:"version"`
+	ObservedIP     string          `json:"observedIp"`
+	Status         string          `json:"status"`
+	RegisteredAt   string          `json:"registeredAt"`
+	DesiredAt      string          `json:"desiredAt,omitempty"`
+	LastSeen       string          `json:"lastSeen"`
+	LastError      string          `json:"lastError"`
+	Desired        ProxyConfig     `json:"desired"`
+	Revision       int64           `json:"revision"`
+	Runtime        ProxyRuntime    `json:"runtime"`
+	Metrics        Metrics         `json:"metrics"`
+	History        []Metrics       `json:"history"`
+	Logs           []AgentLog      `json:"logs"`
 }
 type ConfigureInput struct {
 	Name  string      `json:"name"`
 	Proxy ProxyConfig `json:"proxy"`
 }
 type EnrollInput struct {
+	Kind     string `json:"kind,omitempty"`
 	Name     string `json:"name"`
 	Hostname string `json:"hostname"`
 	OS       string `json:"os"`
@@ -96,19 +143,21 @@ type EnrollInput struct {
 	Version  string `json:"version"`
 }
 type Heartbeat struct {
-	ID       string       `json:"id"`
-	Hostname string       `json:"hostname"`
-	OS       string       `json:"os"`
-	Arch     string       `json:"arch"`
-	Version  string       `json:"version"`
-	Metrics  Metrics      `json:"metrics"`
-	Runtime  ProxyRuntime `json:"runtime"`
-	Logs     []AgentLog   `json:"logs"`
+	Client   *ClientSnapshot `json:"client,omitempty"`
+	ID       string          `json:"id"`
+	Hostname string          `json:"hostname"`
+	OS       string          `json:"os"`
+	Arch     string          `json:"arch"`
+	Version  string          `json:"version"`
+	Metrics  Metrics         `json:"metrics"`
+	Runtime  ProxyRuntime    `json:"runtime"`
+	Logs     []AgentLog      `json:"logs"`
 }
 type HeartbeatResponse struct {
-	Revision   int64       `json:"revision"`
-	Proxy      ProxyConfig `json:"proxy"`
-	ServerTime string      `json:"serverTime"`
+	Client     *ClientPolicy `json:"client,omitempty"`
+	Revision   int64         `json:"revision"`
+	Proxy      ProxyConfig   `json:"proxy"`
+	ServerTime string        `json:"serverTime"`
 }
 
 type agentDisk struct {
@@ -278,6 +327,12 @@ func safeView(a agentDisk) AgentView {
 	v.History = slices.Clone(v.History)
 	v.Logs = slices.Clone(v.Logs)
 	v.Desired.AllowedCIDRs = slices.Clone(v.Desired.AllowedCIDRs)
+	v.Client.Processes = slices.Clone(v.Client.Processes)
+	v.Client.Routes = slices.Clone(v.Client.Routes)
+	v.ClientBindings = slices.Clone(v.ClientBindings)
+	if v.Kind == "" {
+		v.Kind = "cloud"
+	}
 	if v.LastSeen == "" {
 		v.Status = "pending"
 	} else if t, e := time.Parse(time.RFC3339, v.LastSeen); e == nil && time.Since(t) < 32*time.Second {
@@ -324,13 +379,19 @@ func clean(v string, n int) string {
 	return v
 }
 func (s *Registry) enrollLocked(in EnrollInput, observed string) (string, string, error) {
+	if in.Kind == "" {
+		in.Kind = "cloud"
+	}
+	if in.Kind != "cloud" && in.Kind != "client" {
+		return "", "", errors.New("invalid agent kind")
+	}
 	if strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
 		return "", "", errors.New("agent name required (max 80 chars)")
 	}
 	id := randomHex(12)
 	token := randomHex(32)
 	now := time.Now().UTC().Format(time.RFC3339)
-	a := agentDisk{AgentView: AgentView{ID: id, Name: clean(in.Name, 80), Hostname: clean(in.Hostname, 160), OS: clean(in.OS, 24), Arch: clean(in.Arch, 24), Version: clean(in.Version, 30), ObservedIP: observed, RegisteredAt: now, Status: "pending", Desired: ProxyConfig{Listen: "0.0.0.0", Port: 1080, MaxConnections: 200, Capacity: 8, UDP: true}, History: []Metrics{}, Logs: []AgentLog{}}, TokenHash: SHA(token)}
+	a := agentDisk{AgentView: AgentView{Kind: in.Kind, ID: id, Name: clean(in.Name, 80), Hostname: clean(in.Hostname, 160), OS: clean(in.OS, 24), Arch: clean(in.Arch, 24), Version: clean(in.Version, 30), ObservedIP: observed, RegisteredAt: now, Status: "pending", Desired: ProxyConfig{Listen: "0.0.0.0", Port: 1080, MaxConnections: 200, Capacity: 8, UDP: true}, History: []Metrics{}, Logs: []AgentLog{}}, TokenHash: SHA(token)}
 	s.agents = append(s.agents, a)
 	if err := s.saveLocked(); err != nil {
 		s.agents = s.agents[:len(s.agents)-1]
@@ -402,6 +463,9 @@ func (s *Registry) RevokeEnrollment(id string) error {
 func (s *Registry) EnrollWithGrant(token string, in EnrollInput, observed string) (string, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if in.Kind != "" && in.Kind != "cloud" && in.Kind != "client" {
+		return "", "", errors.New("invalid agent kind")
+	}
 	if token == "" || strings.TrimSpace(in.Name) == "" || len(in.Name) > 80 {
 		return "", "", errors.New("invalid enrollment key or agent name")
 	}
@@ -452,8 +516,50 @@ func (s *Registry) Report(in Heartbeat, observed string) (HeartbeatResponse, err
 		a.Arch = clean(in.Arch, 24)
 		a.Version = clean(in.Version, 30)
 		a.Metrics = in.Metrics
-		a.Runtime = in.Runtime
-		a.LastError = clean(in.Runtime.Error, 512)
+		bindingsChanged := false
+		if a.Kind == "client" {
+			if in.Client == nil {
+				return HeartbeatResponse{}, errors.New("client heartbeat missing inventory")
+			}
+			if len(in.Client.Processes) > 128 || len(in.Client.Routes) > 128 {
+				return HeartbeatResponse{}, errors.New("client inventory too large")
+			}
+			clientState := ClientSnapshot{Backend: clean(in.Client.Backend, 48), Revision: in.Client.Revision,
+				Error: clean(in.Client.Error, 360), ScanError: clean(in.Client.ScanError, 360), ObservedAt: clean(in.Client.ObservedAt, 40),
+				Processes: make([]ClientProcess, 0, len(in.Client.Processes)),
+				Routes:    make([]ClientRoute, 0, len(in.Client.Routes))}
+			for _, p := range in.Client.Processes {
+				if p.PID > 0 && len(p.StartTime) <= 80 && p.StartTime != "" && len(p.Name) <= 100 && len(p.Path) <= 2048 {
+					clientState.Processes = append(clientState.Processes, p)
+				}
+			}
+			for _, r := range in.Client.Routes {
+				clientState.Routes = append(clientState.Routes, ClientRoute{PID: r.PID, StartTime: clean(r.StartTime, 80), NodeID: clean(r.NodeID, 60),
+					Status: clean(r.Status, 60), Detail: clean(r.Detail, 250)})
+			}
+			a.Client = clientState
+			// A fresh successful inventory invalidates assignments to reused or exited PIDs.
+			if clientState.ScanError == "" && in.Client.Processes != nil {
+				live := make(map[string]bool, len(clientState.Processes))
+				for _, p := range clientState.Processes {
+					live[fmt.Sprintf("%d:%s", p.PID, p.StartTime)] = true
+				}
+				pruned := a.ClientBindings[:0]
+				for _, b := range a.ClientBindings {
+					if live[fmt.Sprintf("%d:%s", b.PID, b.StartTime)] {
+						pruned = append(pruned, b)
+					}
+				}
+				if len(pruned) != len(a.ClientBindings) {
+					a.ClientBindings = slices.Clone(pruned)
+					a.Revision++
+					bindingsChanged = true
+				}
+			}
+		} else {
+			a.Runtime = in.Runtime
+			a.LastError = clean(in.Runtime.Error, 512)
+		}
 		if in.Metrics.At != "" {
 			a.History = append(a.History, in.Metrics)
 			if len(a.History) > 48 {
@@ -474,8 +580,10 @@ func (s *Registry) Report(in Heartbeat, observed string) (HeartbeatResponse, err
 		if len(a.Logs) > 80 {
 			a.Logs = a.Logs[len(a.Logs)-80:]
 		}
-		if time.Since(s.lastSaved) > 22*time.Second {
-			_ = s.saveLocked()
+		if bindingsChanged || time.Since(s.lastSaved) > 22*time.Second {
+			if err := s.saveLocked(); err != nil {
+				return HeartbeatResponse{}, fmt.Errorf("persist agent heartbeat: %w", err)
+			}
 		}
 		return HeartbeatResponse{Revision: a.Revision, Proxy: a.Desired, ServerTime: time.Now().UTC().Format(time.RFC3339)}, nil
 	}
@@ -533,6 +641,9 @@ func (s *Registry) Configure(id string, in ConfigureInput) (AgentView, error) {
 		if a.ID != id {
 			continue
 		}
+		if a.Kind == "client" {
+			return AgentView{}, errors.New("use client bindings API for Windows clients")
+		}
 		c := in.Proxy
 		if c.Password == "" && c.Username == a.Desired.Username {
 			c.Password = a.Desired.Password
@@ -582,6 +693,9 @@ func (s *Registry) Action(id, action string) (AgentView, error) {
 		if a.ID != id {
 			continue
 		}
+		if a.Kind == "client" {
+			return AgentView{}, errors.New("cloud proxy actions unavailable for client")
+		}
 		before := *a
 		switch action {
 		case "start":
@@ -623,4 +737,94 @@ func (s *Registry) Delete(id string) error {
 		}
 	}
 	return errors.New("agent not found")
+}
+
+// UpdateClientBindings validates reported PID identity and enforces cluster-wide
+// allocation limits atomically under the Registry lock. capacity includes local
+// reservations passed in by the controller (which owns the node inventory).
+func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, capacity map[string]int) (AgentView, error) {
+	if len(requested) > 64 {
+		return AgentView{}, errors.New("最多绑定 64 个进程")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := -1
+	for i := range s.agents {
+		if s.agents[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 || s.agents[idx].Kind != "client" {
+		return AgentView{}, errors.New("Windows Client 不存在")
+	}
+	a := &s.agents[idx]
+	if a.Client.ScanError != "" || a.Client.ObservedAt == "" {
+		return AgentView{}, errors.New("客户端进程清单尚不可用")
+	}
+	lastSeen, err := time.Parse(time.RFC3339, a.LastSeen)
+	if err != nil || time.Since(lastSeen) > time.Minute {
+		return AgentView{}, errors.New("Windows Client 已离线，拒绝基于过期进程清单建立新绑定")
+	}
+	observedAt, err := time.Parse(time.RFC3339, a.Client.ObservedAt)
+	if err != nil || time.Since(observedAt) > 2*time.Minute {
+		return AgentView{}, errors.New("Windows Client 进程清单已过期，请刷新后重试")
+	}
+	live := map[string]ClientProcess{}
+	for _, p := range a.Client.Processes {
+		live[fmt.Sprintf("%d:%s", p.PID, p.StartTime)] = p
+	}
+	seen := map[string]bool{}
+	checked := make([]ClientBinding, 0, len(requested))
+	reserved := map[string]int{}
+	for i, other := range s.agents {
+		if i != idx && other.Kind == "client" {
+			for _, b := range other.ClientBindings {
+				reserved[b.NodeID]++
+			}
+		}
+	}
+	for _, b := range requested {
+		p, ok := live[fmt.Sprintf("%d:%s", b.PID, b.StartTime)]
+		if !ok {
+			return AgentView{}, fmt.Errorf("PID %d 已退出或发生重用，请刷新", b.PID)
+		}
+		key := fmt.Sprintf("%d:%s", b.PID, b.StartTime)
+		if seen[key] {
+			return AgentView{}, errors.New("同一进程重复绑定")
+		}
+		seen[key] = true
+		if capacity[b.NodeID] <= 0 {
+			return AgentView{}, fmt.Errorf("代理节点 %s 不可用", b.NodeID)
+		}
+		reserved[b.NodeID]++
+		if reserved[b.NodeID] > capacity[b.NodeID] {
+			return AgentView{}, fmt.Errorf("节点 %s 容量已满", b.NodeID)
+		}
+		checked = append(checked, ClientBinding{PID: p.PID, Name: p.Name, StartTime: p.StartTime, NodeID: b.NodeID})
+	}
+	before := slices.Clone(a.ClientBindings)
+	if slices.Equal(before, checked) {
+		return safeView(*a), nil
+	}
+	a.ClientBindings = checked
+	a.Revision++
+	a.DesiredAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.saveLocked(); err != nil {
+		a.ClientBindings = before
+		a.Revision--
+		return AgentView{}, err
+	}
+	return safeView(*a), nil
+}
+
+func (s *Registry) ClientBindings(id string) (int64, []ClientBinding, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.agents {
+		if a.ID == id && a.Kind == "client" {
+			return a.Revision, slices.Clone(a.ClientBindings), true
+		}
+	}
+	return 0, nil, false
 }

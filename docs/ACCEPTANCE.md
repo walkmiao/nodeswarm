@@ -1,3 +1,16 @@
+# NodeSwarm v1.2 Acceptance (2026-11-03)
+
+- [x] Unit tests and race detector: client binding identity, capacity concurrency, role persistence, name-collision rejection, and zero false enforcement claims.
+- [x] `go vet ./...`, frontend JavaScript parse.
+- [x] Actual Linux Controller + Cloud Agent + local Client process smoke: enroll, heartbeat, process discovery, node binding, policy report, SOCKS5 auth and UDP negotiation, remote stop/start/restart.
+- [x] Playwright controller-backed client fleet UI: login, real API list, client drawer, node binding save and persistence check.
+- [ ] Windows 11 Client scheduled-task execution and UAC/ProxyBridge driver installation.
+- [ ] Same-name PID-specific transparent proxy redirection / independently verified egress IP.
+- [ ] Cloud VPS firewalls, public UDP relay, Docker runtime and long-running production scale.
+- [ ] Controller HA / RBAC / automated client upgrade.
+
+---
+
 # NodeSwarm v1.1 Acceptance Summary (2026-11-03)
 
 - [x] Go unit tests, race detector, and `go vet`.
