@@ -431,7 +431,7 @@ func main() {
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && os.Getenv("NODE_MANAGER_ALLOW_PUBLIC_LISTEN") != "1" {
 		log.Fatal("refusing public HTTP binding; use Caddy/Nginx HTTPS reverse proxy to 127.0.0.1:8088, or explicitly set NODE_MANAGER_ALLOW_PUBLIC_LISTEN=1 for secure private networks")
 	}
-	fmt.Printf("NodeSwarm v1.3: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
+	fmt.Printf("NodeSwarm v1.3.1: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
 	srv := &http.Server{Addr: addr, Handler: (&app{store: store, registry: registry, alerts: alerts, adminToken: adminToken, enrollKey: enrollKey}).routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 75 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

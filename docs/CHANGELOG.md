@@ -1,5 +1,11 @@
 # NodeSwarm Change Log
 
+## v1.3.1 - 2026-11-03
+
+- Replace polling by repeatedly starting PowerShell with native Windows Toolhelp32 and Kernel32 process discovery (PID, creation-time fingerprint, full executable path).
+- Keep PowerShell inventory as an explicit fallback if native enumeration fails; no third-party Windows runtime dependency.
+- Windows amd64 build passes; no native Windows execution tests available in this container.
+
 ## v1.3.0 - 2026-11-03
 
 - Add per-Windows-client configurable PID quota (default 8, adjustable 1–128) with atomic Controller validation, persisted settings, versioned updates, and safe shrink behavior.

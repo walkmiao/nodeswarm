@@ -63,3 +63,9 @@
 - [x] Controller + real process Client E2E: set limit to 1; authenticated policy heartbeat and `ClientSnapshot` report effective limit.
 - [x] Browser automated test: modify per-machine quota, block over-limit selection, save one binding, verify persisted API.
 - [ ] Independent per-PID Windows network enforcement, actual separate egress verification and Windows in-situ driver acceptance.
+
+## v1.3.1 Windows process discovery
+
+- [x] Native Toolhelp32/Kernel32 process inventory implemented, with PowerShell fallback.
+- [x] CGO-free Windows amd64 cross-build succeeds.
+- [ ] Windows 11 real-host CPU/memory and PID-reuse regression; no Windows runtime available in this environment.

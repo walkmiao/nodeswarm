@@ -1,4 +1,4 @@
-# NodeSwarm v1.3 — 分布式云代理与 Windows 客户端管理平台
+# NodeSwarm v1.3.1 — 分布式云代理与 Windows 客户端管理平台
 
 面向自有云服务器及 Windows 工作站的 **Controller + Cloud Agent + Windows Client + SOCKS5 节点池** 运维平台。
 将分散在 Linux / Windows 主机上的 SOCKS5 服务，统一到一个轻量的 Web 控制台中管理。系统提供节点注册、心跳、主机指标、凭据保护、远程配置/启停、批量操作、节点监测与规则导出。Go 标准库构建，前端已嵌入二进制，无需 Node.js、数据库或额外 Web 静态资源。
@@ -105,6 +105,10 @@ $env:NODE_MANAGER_PORT = '8188'
 ```
 
 默认只监听本机回环地址。**不要为了远程访问直接将未加 TLS 的 8088 端口暴露到互联网。**
+
+## v1.3.1 优化：Windows 原生进程发现
+
+Windows Client 默认采用 Windows Toolhelp 快照和 Kernel32 进程查询，直接获得可执行文件名称、路径、PID、进程创建时间，避免频繁启动 PowerShell 执行 `Get-Process`。原生枚举整体失败时提供 PowerShell 回退。已通过 Windows amd64 编译，仍需在目标 Windows 11 设备上验证权限、PID 重用行为、资源消耗和长期稳定性。
 
 ## v1.3 新增：每台 Windows 机器可代理 PID 的数量上限
 
