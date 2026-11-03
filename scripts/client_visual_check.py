@@ -70,20 +70,32 @@ def main():
                 page.locator('[data-page="clients"]').wait_for(timeout=10000)
                 page.locator('[data-page="clients"]').click()
                 page.get_by_text('Windows Lab 01').wait_for()
-                page.screenshot(path=str(ROOT.parent/'nodeswarm-v1.2-clients.png'),animations='disabled',full_page=True)
+                page.screenshot(path=str(ROOT.parent/'nodeswarm-v1.3-clients.png'),animations='disabled',full_page=True)
                 page.locator('[data-action="client-detail"]').click()
                 page.locator('.client-node-select').first.wait_for()
-                page.screenshot(path=str(ROOT.parent/'nodeswarm-v1.2-client-detail.png'),animations='disabled')
+                assert page.locator('#client-limit').input_value()=='8'
+                page.locator('#client-limit').fill('1')
+                page.locator('[data-action="save-client-limit"]').click()
+                page.get_by_text('1 个 PID 已规划').count()  # quota pane rendered from server state
+                page.locator('#client-limit').wait_for()
+                assert page.locator('#client-limit').input_value()=='1'
+                code,view=request(base,'/api/clients/'+credential['id'],token=admin)
+                assert code==200 and view.get('maxProxyPids')==1,(code,view)
+                page.screenshot(path=str(ROOT.parent/'nodeswarm-v1.3-client-detail.png'),animations='disabled')
                 page.locator('.client-node-select').first.select_option(node['id'])
+                page.locator('.client-node-select').nth(1).select_option(node['id'])
+                assert page.locator('[data-action="save-client-bindings"]').is_disabled(), 'over limit selection not blocked in UI'
+                page.locator('.client-node-select').nth(1).select_option('')
                 page.locator('[data-action="save-client-bindings"]').click()
                 page.wait_for_timeout(400)
                 code,view=request(base,'/api/clients/'+credential['id'],token=admin)
                 assert code==200 and len(view.get('clientBindings',[]))==1,(code,view)
-                page.locator('[data-action="client-detail"]').click()
+                # Save keeps the detail drawer open so the latest binding can
+                # be reviewed without another navigation.
                 page.locator('.client-node-select').first.wait_for()
                 assert page.locator('.client-node-select').first.input_value()==node['id']
                 assert not errors,errors
-                print('CLIENT VISUAL PASS: auth, client list, process inventory, PID binding, persisted controller API')
+                print('CLIENT VISUAL PASS: auth, quota setting, over-limit UI, PID binding, persistence')
                 browser.close()
         finally:
             process.terminate()

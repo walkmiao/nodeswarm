@@ -24,15 +24,16 @@ import (
 )
 
 type Config struct {
-	Role              string // agent/cloud or client
-	ClientEngine      string
-	ProxyBridgeCLI    string
-	ClientTargets     string
-	Controller        string
-	Name              string
-	EnrollKey         string
-	DataDir           string
-	AllowInsecureHTTP bool
+	Role               string // agent/cloud or client
+	ClientEngine       string
+	ProxyBridgeCLI     string
+	ClientTargets      string
+	ClientPIDHardLimit int
+	Controller         string
+	Name               string
+	EnrollKey          string
+	DataDir            string
+	AllowInsecureHTTP  bool
 }
 type credential struct {
 	Role       string `json:"role,omitempty"`
@@ -174,7 +175,7 @@ func Run(ctx context.Context, c Config) error {
 	}
 	d := &daemon{cfg: c, client: &http.Client{Timeout: 12 * time.Second}, started: time.Now(), lastContact: time.Now()}
 	if c.Role == "client" {
-		wm, err := client.New(client.Config{DataDir: c.DataDir, Engine: c.ClientEngine, ProxyBridgeCLI: c.ProxyBridgeCLI, Targets: c.ClientTargets})
+		wm, err := client.New(client.Config{DataDir: c.DataDir, Engine: c.ClientEngine, ProxyBridgeCLI: c.ProxyBridgeCLI, Targets: c.ClientTargets, PIDHardLimit: c.ClientPIDHardLimit})
 		if err != nil {
 			return err
 		}

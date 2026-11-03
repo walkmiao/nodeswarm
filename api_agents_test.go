@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"net/http/httptest"
 	"github.com/walkmiao/nodeswarm/internal/control"
 	"github.com/walkmiao/nodeswarm/internal/manager"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )

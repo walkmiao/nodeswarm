@@ -80,12 +80,18 @@ def run():
             clientProc=subprocess.Popen([BIN,'-mode','client'],env=client_env,stdout=open('/tmp/nc-e2e-client.log','w'),stderr=subprocess.STDOUT);ps.append(clientProc)
             d=wait_for(lambda x:len(x['clients'])==1 and any(p['pid']==sleeper.pid for p in x['clients'][0].get('client',{}).get('processes',[])),30)
             client=d['clients'][0]
+            assert client['maxProxyPids']==8,client
+            code,quota=http(url,'/api/clients/'+client['id']+'/limits','PUT',admin,{'maxProxyPids':1,'expectedRevision':client['revision']})
+            assert code==200 and quota['maxProxyPids']==1,(code,quota)
+            assert http(url,'/api/clients/'+client['id']+'/limits','PUT',admin,{'maxProxyPids':2,'expectedRevision':client['revision']})[0]==409,'stale quota revision accepted'
+            print('PASS machine PID quota saved with compare-and-swap revision')
             proc=next(p for p in client['client']['processes'] if p['pid']==sleeper.pid)
             code,reply=http(url,'/api/clients/'+client['id']+'/bindings','PUT',admin,{'bindings':[{'pid':proc['pid'],'startTime':proc['startTime'],'nodeId':d['nodes'][0]['id']}]})
             assert code==200,(code,reply)
-            d=wait_for(lambda x:x['clients'][0]['client']['revision']==1 and bool(x['clients'][0]['client'].get('routes')),30)
+            d=wait_for(lambda x:x['clients'][0]['client']['revision']==2 and bool(x['clients'][0]['client'].get('routes')),30)
             route=d['clients'][0]['client']['routes'][0]
             assert route['status']=='planned_only',route
+            assert d['clients'][0]['client'].get('maxProxyPids')==1, 'device did not receive quota'
             assert http(url,'/api/clients/'+client['id']+'/bindings','PUT',admin,{'bindings':[{'pid':proc['pid'],'startTime':'reused-PID','nodeId':d['nodes'][0]['id']} ]})[0]==409
             print('PASS real client process discovery -> binding -> agent acknowledgement, with no false enforcement claim')
             with socket.create_connection(('127.0.0.1',socksPort),timeout=3) as s:

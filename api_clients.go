@@ -24,11 +24,11 @@ func (a *app) listKind(kind string) []control.AgentView {
 // The policy is returned only to the authenticated target client. Proxy
 // passwords never appear in the administrative dashboard or client inventory.
 func (a *app) clientPolicy(id string) *control.ClientPolicy {
-	revision, bindings, ok := a.registry.ClientBindings(id)
+	revision, limit, bindings, ok := a.registry.ClientSettings(id)
 	if !ok {
 		return nil
 	}
-	p := &control.ClientPolicy{Revision: revision, Bindings: bindings, Endpoints: []control.ClientEndpoint{}}
+	p := &control.ClientPolicy{Revision: revision, MaxProxyPIDs: limit, Bindings: bindings, Endpoints: []control.ClientEndpoint{}}
 	known := map[string]bool{}
 	for _, binding := range bindings {
 		if known[binding.NodeID] {
@@ -58,9 +58,31 @@ func (a *app) clientRoutes(mux *http.ServeMux) {
 		}
 		send(w, 200, v)
 	})
+	mux.HandleFunc("PUT /api/clients/{id}/limits", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			MaxProxyPIDs     int    `json:"maxProxyPids"`
+			ExpectedRevision *int64 `json:"expectedRevision"`
+		}
+		if err := decode(r, &req); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		expected := int64(-1)
+		if req.ExpectedRevision != nil {
+			expected = *req.ExpectedRevision
+		}
+		v, err := a.registry.SetClientMaxProxyPIDs(r.PathValue("id"), req.MaxProxyPIDs, expected)
+		if err != nil {
+			fail(w, 409, err)
+			return
+		}
+		_ = a.store.RecordEvent("info", fmt.Sprintf("Windows 客户端 %s PID 配额调整为 %d，修订 %d", v.Name, v.MaxProxyPIDs, v.Revision))
+		send(w, 200, v)
+	})
 	mux.HandleFunc("PUT /api/clients/{id}/bindings", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Bindings []control.ClientBinding `json:"bindings"`
+			Bindings         []control.ClientBinding `json:"bindings"`
+			ExpectedRevision *int64                  `json:"expectedRevision"`
 		}
 		if err := decode(r, &req); err != nil {
 			fail(w, 400, err)
@@ -77,7 +99,11 @@ func (a *app) clientRoutes(mux *http.ServeMux) {
 		for _, local := range locals {
 			caps[local.NodeID]--
 		}
-		v, err := a.registry.UpdateClientBindings(r.PathValue("id"), req.Bindings, caps)
+		expected := int64(-1)
+		if req.ExpectedRevision != nil {
+			expected = *req.ExpectedRevision
+		}
+		v, err := a.registry.UpdateClientBindingsCAS(r.PathValue("id"), req.Bindings, caps, expected)
 		if err != nil {
 			fail(w, 409, err)
 			return

@@ -53,6 +53,18 @@ func TestRemoteWindowsClientLifecycle(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("heartbeat: %d %s", code, body)
 	}
+	code, _ = request("PUT", "/api/clients/"+cred.ID+"/limits", "", map[string]any{"maxProxyPids": 1})
+	if code != 401 {
+		t.Fatal("unauthenticated quota change accepted")
+	}
+	code, body = request("PUT", "/api/clients/"+cred.ID+"/limits", "admin-secret", map[string]any{"maxProxyPids": 1, "expectedRevision": 0})
+	if code != 200 || !strings.Contains(body, `"maxProxyPids":1`) {
+		t.Fatalf("quota update failed: %d %s", code, body)
+	}
+	code, _ = request("PUT", "/api/clients/"+cred.ID+"/limits", "admin-secret", map[string]any{"maxProxyPids": 2, "expectedRevision": 0})
+	if code != 409 {
+		t.Fatal("stale limit edit accepted")
+	}
 	node, err := store.Create(manager.NodeInput{Name: "Tokyo", Host: "203.0.113.8", Port: 1080, Username: "me", Password: "sensitive-9876", Capacity: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +78,7 @@ func TestRemoteWindowsClientLifecycle(t *testing.T) {
 		t.Fatal("proxy password leaked in admin binding response")
 	}
 	code, body = request("POST", "/api/agent/heartbeat", cred.Token, control.Heartbeat{ID: cred.ID, Client: &control.ClientSnapshot{Backend: "observe", Processes: []control.ClientProcess{p}, ObservedAt: time.Now().UTC().Format(time.RFC3339)}})
-	if code != 200 || !strings.Contains(body, "sensitive-9876") {
+	if code != 200 || !strings.Contains(body, "sensitive-9876") || !strings.Contains(body, `"maxProxyPids":1`) {
 		t.Fatalf("client policy not delivered to authenticated agent: %d %s", code, body)
 	}
 	code, body = request("GET", "/api/dashboard", "admin-secret", nil)

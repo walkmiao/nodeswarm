@@ -54,3 +54,12 @@
 ## 发布结论
 
 **可作为“自有 Linux/Windows 云服务器 SOCKS5 服务管理器 v1.0”进行试部署和实际 TCP 场景试用**，但公有云公网联调和 Windows 实机仍需用户环境验证；**不能宣称“热血江湖多开已实现”或“不同 PID 已自动分流”**。
+
+## v1.3.0 acceptance: workstation PID quota (2026-11-03)
+
+- [x] Registry quota 1–128, default 8, independent per workstation; persisted across restart with compatibility for existing v1.2 data.
+- [x] Atomic binding counts, node capacity coexistence, stale policy revision rejection and safe shrinking.
+- [x] Client-side optional hard cap and `pid_limit_exceeded` status, not falsely reported as transparent proxy enforcement.
+- [x] Controller + real process Client E2E: set limit to 1; authenticated policy heartbeat and `ClientSnapshot` report effective limit.
+- [x] Browser automated test: modify per-machine quota, block over-limit selection, save one binding, verify persisted API.
+- [ ] Independent per-PID Windows network enforcement, actual separate egress verification and Windows in-situ driver acceptance.

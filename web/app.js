@@ -1,5 +1,5 @@
 'use strict';
-// NodeSwarm 1.2: self-contained SPA. All displayed remote data is escaped before HTML insertion.
+// NodeSwarm 1.3: self-contained SPA. All displayed remote data is escaped before HTML insertion.
 const $ = s => document.querySelector(s);
 const e = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const icons = {
@@ -74,7 +74,7 @@ function patchDrawer(){
  const statusBox=document.querySelector('[data-live="agent-status"]');if(statusBox)statusBox.innerHTML=agentStatus(a)+' '+runtimeStatus(a)+' <span class="muted small" style="margin-left:auto">'+relative(a.lastSeen)+'</span>';
 }
 function renderLogin(err=''){$('#root').innerHTML=`<div class="login-wrap"><div class="login-left"><div class="login-logo"><div class="brand-emblem">N</div>NodeSwarm <span style="font-size:10px;color:#8094ac;margin-left:5px">/ CONTROL</span></div><div class="login-pitch"><div class="page-eyebrow" style="color:#7eafff;margin-bottom:18px">INFRASTRUCTURE · REIMAGINED</div><h1>一处掌控，<br>所有云端节点。</h1><p>从 Agent 接入、SOCKS5 配置到运行监控，让分散的基础设施变得简单、清晰、可控。</p><div class="login-feature"><span>${I('shield')}令牌认证</span><span>${I('cloud')}跨平台 Agent</span><span>${I('activity')}实时指标</span></div></div><div class="login-legal">NODESWARM V1.2 · SELF-HOSTED</div></div><div class="login-right"><form id="login-form" class="login-form"><div class="page-eyebrow" style="margin-bottom:12px">WELCOME BACK</div><h2>登录控制台</h2><p class="intro">请输入主控端管理员访问令牌，安全连接你的节点。</p><div class="field"><label for="token">管理员访问令牌</label><input class="input" id="token" name="token" type="password" required minlength="24" autocomplete="off" placeholder="粘贴 64 位访问令牌" /></div><button class="btn btn-primary btn-block" type="submit" style="margin-top:21px">${I('arrow')}连接控制台</button><p class="login-error">${e(err)}</p><p class="login-help">首次启动后可在主控服务器的数据目录找到 <code>admin.token</code>。请勿向任何人分享该文件或将令牌写入公开脚本。</p></form></div></div>`;setTimeout(()=>$('#token')?.focus(),0)}
-function sidebar(){const item=(name,ico)=>`<button class="nav-item ${state.page===name?'active':''}" data-page="${name}" type="button">${I(ico)}${PAGE_LABELS[name]}${name==='agents'?`<span class="nav-badge">${state.data.agents.filter(a=>a.status==='online').length}</span>`:name==='alerts'&&state.data.activeAlerts?`<span class="nav-badge alert-count">${state.data.activeAlerts}</span>`:''}</button>`;return `<aside class="sidebar"><div class="brand"><div class="brand-emblem">N</div><div><strong>NodeSwarm</strong><span>INFRASTRUCTURE PLATFORM</span></div></div><div class="nav-group">工作空间</div>${item('overview','dashboard')}${item('agents','server')}${item('clients','harddrive')}${item('nodes','globe')}<div class="nav-group">诊断工具</div>${item('processes','layers')}<div class="nav-group">管理</div>${item('alerts','alert')}${item('events','list')}${item('settings','settings')}<div class="sidebar-bottom"><div class="sidebar-status"><span class="status-pulse"></span>控制平面在线</div><div class="sidebar-footnote">${state.data.agents.length} 台 Agent 已登记</div><div class="sidebar-version"><span>NodeSwarm v1.2</span><button class="btn btn-quiet btn-sm" style="color:#8fa2b7" data-action="logout">退出</button></div></div></aside>`}
+function sidebar(){const item=(name,ico)=>`<button class="nav-item ${state.page===name?'active':''}" data-page="${name}" type="button">${I(ico)}${PAGE_LABELS[name]}${name==='agents'?`<span class="nav-badge">${state.data.agents.filter(a=>a.status==='online').length}</span>`:name==='alerts'&&state.data.activeAlerts?`<span class="nav-badge alert-count">${state.data.activeAlerts}</span>`:''}</button>`;return `<aside class="sidebar"><div class="brand"><div class="brand-emblem">N</div><div><strong>NodeSwarm</strong><span>INFRASTRUCTURE PLATFORM</span></div></div><div class="nav-group">工作空间</div>${item('overview','dashboard')}${item('agents','server')}${item('clients','harddrive')}${item('nodes','globe')}<div class="nav-group">诊断工具</div>${item('processes','layers')}<div class="nav-group">管理</div>${item('alerts','alert')}${item('events','list')}${item('settings','settings')}<div class="sidebar-bottom"><div class="sidebar-status"><span class="status-pulse"></span>控制平面在线</div><div class="sidebar-footnote">${state.data.agents.length} 台 Agent 已登记</div><div class="sidebar-version"><span>NodeSwarm v1.3</span><button class="btn btn-quiet btn-sm" style="color:#8fa2b7" data-action="logout">退出</button></div></div></aside>`}
 function heading(label,description,actions='',eyebrow='WORKSPACE'){return `<div class="page-heading"><div class="heading-copy"><div class="page-eyebrow">${eyebrow}</div><h1>${label}</h1><p>${description}</p></div><div class="heading-actions">${actions}</div></div>`}
 const refreshButton=()=>`<button class="btn" data-action="refresh">${I('refresh')}刷新</button>`;
 function metricCard(name,value,sub,ico,color=''){return `<div class="metric-card"><div class="metric-top"><span>${name}</span><div class="metric-icon ${color}">${I(ico)}</div></div><div class="metric-value numeric">${value}</div><div class="metric-bottom">${sub}</div></div>`}
@@ -109,15 +109,16 @@ function clientsPage(){
  const clients=state.data.clients||[],online=clients.filter(c=>c.status==='online').length;
  const active=clients.reduce((n,c)=>n+(c.client?.processes||[]).length,0),bound=clients.reduce((n,c)=>n+(c.clientBindings||[]).length,0);
  const filtered=clients.filter(c=>`${c.name} ${c.hostname} ${c.id}`.toLowerCase().includes(state.filter.toLowerCase()));
- const rows=filtered.map(c=>`<tr><td><div class="table-primary"><div class="avatar">${I('harddrive')}</div><div><div class="name">${e(c.name)}</div><div class="description mono">${e(c.hostname||c.observedIp||c.id)}</div></div></div></td><td>${agentStatus(c)}</td><td>${status((c.client?.backend||'observe')==='proxybridge'?'ProxyBridge':'观测模式',(c.client?.backend==='proxybridge')?'wait':'')}</td><td class="numeric">${(c.client?.processes||[]).length}</td><td class="numeric">${(c.clientBindings||[]).length}</td><td class="muted">${relative(c.lastSeen)}</td><td><div class="table-actions"><button class="btn btn-sm" data-action="client-detail" data-id="${e(c.id)}">${I('settings')}管理进程</button></div></td></tr>`).join('');
+ const rows=filtered.map(c=>`<tr><td><div class="table-primary"><div class="avatar">${I('harddrive')}</div><div><div class="name">${e(c.name)}</div><div class="description mono">${e(c.hostname||c.observedIp||c.id)}</div></div></div></td><td>${agentStatus(c)}</td><td>${status((c.client?.backend||'observe')==='proxybridge'?'ProxyBridge':'观测模式',(c.client?.backend==='proxybridge')?'wait':'')}</td><td class="numeric">${(c.client?.processes||[]).length}</td><td class="numeric"><strong>${(c.clientBindings||[]).length}</strong> <span class="muted">/ ${c.maxProxyPids||8}</span></td><td class="muted">${relative(c.lastSeen)}</td><td><div class="table-actions"><button class="btn btn-sm" data-action="client-detail" data-id="${e(c.id)}">${I('settings')}管理进程</button></div></td></tr>`).join('');
  return `${heading('Windows 客户端','独立部署在 Windows 游戏主机，集中查看进程实例和配置 SOCKS5 节点策略。',`${refreshButton()}<button class="btn btn-primary" data-page="settings">${I('plus')}部署客户端</button>`,'CLIENT FLEET')}
  <section class="metric-grid">${metricCard('已注册客户端',clients.length,'Windows 工作站','harddrive')}${metricCard('在线客户端',online,'最近 32 秒收到心跳','activity','teal')}${metricCard('已发现目标进程',active,'按目标 EXE 名称过滤','layers','purple')}${metricCard('已规划节点绑定',bound,'不代表流量已代理','link','amber')}</section>
  <div class="info-strip warning">${I('alert')}<div><strong>绑定不等于真实出站已验证</strong><p>Windows Client 会核验 PID 与进程启动时间。默认只观察；可选 ProxyBridge 进程名规则，但不支持同名不同 PID 的独立出口。界面只展示已确认的执行阶段。</p></div></div>
- <section class="card"><div class="toolbar"><div class="search-wrap">${I('search')}<input class="input" data-filter="clients" value="${e(state.filter)}" placeholder="搜索电脑名称 / 主机名"></div><div class="toolbar-right muted small">${clients.length} 台工作站</div></div>${rows?`<div class="table-wrap"><table><thead><tr><th>设备</th><th>在线状态</th><th>客户端模式</th><th>发现进程</th><th>绑定数量</th><th>最近心跳</th><th style="text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div>`:empty('harddrive','暂无 Windows Client','在 Windows 电脑安装 NodeSwarm Client，注册后会显示实际进程与心跳。',`<button class="btn btn-primary" data-page="settings">查看部署方法</button>`)}</section>`
+ <section class="card"><div class="toolbar"><div class="search-wrap">${I('search')}<input class="input" data-filter="clients" value="${e(state.filter)}" placeholder="搜索电脑名称 / 主机名"></div><div class="toolbar-right muted small">${clients.length} 台工作站</div></div>${rows?`<div class="table-wrap"><table><thead><tr><th>设备</th><th>在线状态</th><th>客户端模式</th><th>发现进程</th><th>PID 配额（已绑定/上限）</th><th>最近心跳</th><th style="text-align:right">操作</th></tr></thead><tbody>${rows}</tbody></table></div>`:empty('harddrive','暂无 Windows Client','在 Windows 电脑安装 NodeSwarm Client，注册后会显示实际进程与心跳。',`<button class="btn btn-primary" data-page="settings">查看部署方法</button>`)}</section>`
 }
 function clientDrawerMarkup(){
  const c=(state.data.clients||[]).find(c=>c.id===state.clientDetail);if(!c)return '';
  const ps=c.client?.processes||[],bindings=c.clientBindings||[],routes=c.client?.routes||[];
+ const quota=c.maxProxyPids||8, used=bindings.length, localCap=c.client?.maxProxyPids||0;
  const nodes=state.data.nodes||[];
  const rows=ps.map(p=>{
    const assigned=bindings.find(b=>b.pid===p.pid&&b.startTime===p.startTime);
@@ -129,6 +130,13 @@ function clientDrawerMarkup(){
  }).join('');
  return `<div class="drawer-overlay" data-overlay="true"><aside class="drawer client-drawer" role="dialog" aria-modal="true" aria-label="Windows Client ${e(c.name)}"><div class="drawer-head"><div class="drawer-head-top"><div><div class="page-eyebrow">WINDOWS CLIENT</div><h2>${e(c.name)}</h2><p>${e(c.hostname||c.observedIp)} · ${e(c.id)}</p></div><button class="btn btn-icon btn-quiet" data-action="close-overlay" aria-label="关闭">${I('x')}</button></div><div class="client-status-row">${agentStatus(c)}${status((c.client?.backend||'observe')==='proxybridge'?'应用名规则模式':'仅观测','wait')}<span class="muted">最近心跳 ${relative(c.lastSeen)}</span></div></div>
  <div class="drawer-content"><section class="drawer-section"><h3>策略执行状态</h3><div class="modal-notice">${I('info')} ${e(c.client?.error||'目前只报告策略和进程名规则状态，不代表 PID 级流量已验证。')}</div><div class="drawer-kv"><span>目标 EXE 数量</span><span>${ps.length}</span></div><div class="drawer-kv"><span>期望修订 / 已回报</span><span>${c.revision} / ${c.client?.revision||0}</span></div></section>
+ <section class="drawer-section"><h3>本机可代理 PID 数量上限</h3>
+ <p class="muted" style="font-size:12px;margin:0 0 13px">每台 Windows 机器独立设置。保存后主控和客户端会共同校验；超额绑定直接拒绝执行，不会被标记为代理成功。</p>
+ <div class="pid-quota-header"><div><strong id="client-quota-used">${used}</strong> <span class="muted">/ ${quota} 个 PID 已规划</span></div>${status(used>=quota?'配额已满':'可继续分配',used>=quota?'wait':'good')}</div>
+ <div class="pid-quota-track"><span style="width:${Math.min(100,Math.round(used/quota*100))}%"></span></div>
+ <div class="pid-quota-form"><label for="client-limit">允许代理的 PID 上限</label><input class="input" id="client-limit" type="number" min="1" max="128" step="1" value="${quota}"/><button class="btn" data-action="save-client-limit">保存上限</button></div>
+ <p class="muted" style="font-size:11px;margin:10px 0 0">有效上限：${localCap?`${localCap}（客户端已确认）`:`等待客户端下一次心跳回报`}。如果客户端设置了更低的本机硬上限，以较低值为准。</p>
+ <div id="client-quota-preview" class="muted" style="font-size:11px;margin-top:8px">选择节点后会实时检查本次计划数量。</div></section>
  <section class="drawer-section"><h3>目标进程与代理节点</h3><p class="muted" style="font-size:12px;margin-bottom:12px">每条记录按 PID + 启动时间识别。已退出或重启的进程自动失效。</p><div class="table-wrap"><table><thead><tr><th>目标进程</th><th>节点</th><th>实际状态</th></tr></thead><tbody>${rows||`<tr><td colspan="3">当前没有识别到目标进程。请检查 Client.exe 是否启动以及客户端过滤配置。</td></tr>`}</tbody></table></div></section>
  <section class="drawer-section"><h3>客户端记录</h3>${(c.logs||[]).slice(-6).reverse().map(l=>`<div class="log-row"><div class="log-symbol">${I('activity')}</div><div><strong>${e(l.message)}</strong><time>${tformat(l.at)}</time></div></div>`).join('')||'<p class="muted">尚无事件记录</p>'}</section><section class="drawer-section"><button class="btn btn-danger btn-sm" data-action="delete-client" data-id="${e(c.id)}">${I('trash')}注销此客户端</button></section></div>
  <div class="drawer-actions"><button class="btn" data-action="close-overlay">取消</button><button class="btn btn-primary" data-action="save-client-bindings">${I('check')}保存并下发绑定</button></div></aside></div>`;
@@ -228,11 +236,21 @@ async function handleAction(action,el){const id=el.dataset.id,which=el.dataset.v
  case 'unmute-alert':{await api('/api/alerts/mute/'+encodeURIComponent(id),'DELETE');toast('告警提醒已恢复');break}
  case 'delete-node':{const node=nodeById(id);if(!node)return;if(!confirm(`确定删除代理节点「${node.name}」吗？`))return;await api('/api/nodes/'+encodeURIComponent(id),'DELETE');toast('已删除代理节点');break}
  case 'test-node':{toast('正在验证 SOCKS5 TCP 连接…');const p=await api('/api/nodes/'+encodeURIComponent(id)+'/probe','POST',{});toast(p.ok?`TCP 检测通过 · ${p.latencyMs} ms（不代表 UDP 已验证）`:`检测失败：${p.detail}`,!p.ok);break}
+ case 'save-client-limit':{
+    const cid=state.clientDetail,c=state.data.clients.find(x=>x.id===cid),raw=$('#client-limit')?.value;
+    const limit=Number(raw);
+    if(!Number.isInteger(limit)||limit<1||limit>128){toast('PID 上限必须是 1～128 的整数',true);return}
+    const updated=await api('/api/clients/'+encodeURIComponent(cid)+'/limits','PUT',{maxProxyPids:limit,expectedRevision:c.revision});
+    state.data.clients=state.data.clients.map(x=>x.id===cid?updated:x);
+    render();toast(`已设置 ${c.name} 最多代理 ${limit} 个 PID`);return;
+ }
  case 'save-client-bindings':{
-    const cid=state.clientDetail,sel=[...document.querySelectorAll('[data-client-bind]')];
+    const cid=state.clientDetail,c=state.data.clients.find(x=>x.id===cid),sel=[...document.querySelectorAll('[data-client-bind]')];
     const bindings=sel.filter(x=>x.value).map(x=>({pid:Number(x.dataset.pid),startTime:x.dataset.start,nodeId:x.value}));
-    await api('/api/clients/'+encodeURIComponent(cid)+'/bindings','PUT',{bindings});
-    state.clientDetail='';toast('进程策略已保存。Agent 将在下一次心跳后回报实际执行状态');break;
+    if(bindings.length>(c.maxProxyPids||8)){toast(`超出当前机器 PID 配额 ${c.maxProxyPids||8}，请减少绑定`,true);return}
+    const updated=await api('/api/clients/'+encodeURIComponent(cid)+'/bindings','PUT',{bindings,expectedRevision:c.revision});
+    state.data.clients=state.data.clients.map(x=>x.id===cid?updated:x);
+    render();toast('进程绑定已保存，等待客户端回报实际执行结果');return;
  }
  case 'delete-client':{
     const c=state.data.clients.find(c=>c.id===id);if(!c)return;
@@ -263,7 +281,20 @@ document.addEventListener('click',async ev=>{
  state.busy=true;try{await handleAction(el.dataset.action,el)}catch(err){if(state.token)toast(err.message,true)}finally{state.busy=false}
 });
 document.addEventListener('submit',async ev=>{if(ev.target.id!=='login-form')return;ev.preventDefault();const form=ev.target,token=String(new FormData(form).get('token')||'').trim();const btn=form.querySelector('button[type=submit]');btn.disabled=true;await connect(token)});
-document.addEventListener('change',ev=>{const el=ev.target;if(el.dataset.check==='agent'){if(el.checked)state.selected.add(el.value);else state.selected.delete(el.value);render()}else if(el.dataset.check==='all'){const all=state.data.agents.filter(a=>`${a.name} ${a.hostname} ${a.observedIp}`.toLowerCase().includes(state.filter.toLowerCase()));if(el.checked)all.forEach(a=>state.selected.add(a.id));else state.selected.clear();render()}});
+document.addEventListener('change',ev=>{
+ if(ev.target.matches('[data-client-bind],#client-limit')){
+    const c=(state.data.clients||[]).find(x=>x.id===state.clientDetail);
+    if(c){
+      const n=[...document.querySelectorAll('[data-client-bind]')].filter(x=>x.value).length;
+      const quota=Number($('#client-limit')?.value||c.maxProxyPids||8);
+      const hint=$('#client-quota-preview');
+      if(hint){hint.textContent=`本次选择 ${n} / ${quota} 个 PID ${n>quota?'· 超出上限，请取消部分绑定':'· 尚未保存'}`;hint.style.color=n>quota?'var(--red, #b42318)':''}
+      const save=document.querySelector('[data-action="save-client-bindings"]');
+      if(save)save.disabled=n>(c.maxProxyPids||8);
+    }
+    return;
+ }
+ const el=ev.target;if(el.dataset.check==='agent'){if(el.checked)state.selected.add(el.value);else state.selected.delete(el.value);render()}else if(el.dataset.check==='all'){const all=state.data.agents.filter(a=>`${a.name} ${a.hostname} ${a.observedIp}`.toLowerCase().includes(state.filter.toLowerCase()));if(el.checked)all.forEach(a=>state.selected.add(a.id));else state.selected.clear();render()}});
 document.addEventListener('input',ev=>{const el=ev.target;if(el.dataset.filter){state.filter=el.value;const start=el.selectionStart,end=el.selectionEnd;render();const el2=$('[data-filter="'+el.dataset.filter+'"]');if(el2){el2.focus();el2.setSelectionRange(start,end)}}});
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&(state.modal||state.drawer)){closeOverlay()};if(ev.key==='Enter'&&ev.target.id==='process-filter'){ev.preventDefault();state.processFilter=ev.target.value.trim();fetchProcesses().then(render)}});
 if(state.token){refresh(false)}else{renderLogin()}

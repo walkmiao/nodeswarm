@@ -6,7 +6,7 @@ import zipfile
 import sys
 
 root = Path(__file__).resolve().parents[1]
-version = 'v1.2.0'
+version = 'v1.3.0'
 target = root.parent / f'nodeswarm-{version}-release.zip'
 binaries = (
     'node-console-linux-amd64',

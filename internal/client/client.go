@@ -28,6 +28,7 @@ type Config struct {
 	Engine         string // observe (default) or proxybridge
 	ProxyBridgeCLI string // full path to an administrator-approved executable
 	Targets        string // semicolon-separated basenames, e.g. Client.exe
+	PIDHardLimit   int    // optional device-side upper bound, 0 = use Controller limit
 }
 
 type Manager struct {
@@ -48,6 +49,9 @@ type Manager struct {
 func New(c Config) (*Manager, error) {
 	if c.Engine == "" {
 		c.Engine = "observe"
+	}
+	if c.PIDHardLimit < 0 || c.PIDHardLimit > control.AbsoluteMaxProxyPIDs {
+		return nil, fmt.Errorf("PIDHardLimit must be 0-%d", control.AbsoluteMaxProxyPIDs)
 	}
 	if c.Engine != "observe" && c.Engine != "proxybridge" {
 		return nil, fmt.Errorf("unsupported client engine %q", c.Engine)
@@ -213,6 +217,29 @@ func (m *Manager) Apply(policy *control.ClientPolicy) error {
 	}
 	m.state.Routes = routes
 	m.state.Revision = policy.Revision
+	// A compromised/stale Controller or an old API cannot raise the local
+	// machine's hard ceiling. Never launch a by-name engine when over quota.
+	limit := policy.MaxProxyPIDs
+	if limit <= 0 || limit > control.AbsoluteMaxProxyPIDs {
+		limit = control.DefaultMaxProxyPIDs
+	}
+	if m.cfg.PIDHardLimit > 0 && m.cfg.PIDHardLimit < limit {
+		limit = m.cfg.PIDHardLimit
+	}
+	m.state.MaxProxyPIDs = limit
+	distinct := make(map[int]bool, len(policy.Bindings))
+	for _, b := range policy.Bindings {
+		distinct[b.PID] = true
+	}
+	if len(policy.Bindings) > limit || len(distinct) != len(policy.Bindings) {
+		m.stopLocked()
+		m.state.Error = fmt.Sprintf("pid_limit_exceeded: request %d PID(s), machine limit %d", len(policy.Bindings), limit)
+		for i := range m.state.Routes {
+			m.state.Routes[i].Status = "pid_limit_exceeded"
+			m.state.Routes[i].Detail = "当前机器代理 PID 配额超限，已拒绝启动代理引擎"
+		}
+		return nil
+	}
 	if len(policy.Bindings) == 0 {
 		m.stopLocked()
 		m.state.Error = ""

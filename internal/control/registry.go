@@ -20,7 +20,11 @@ import (
 	"time"
 )
 
-const AgentVersion = "1.2.0"
+const (
+	AgentVersion         = "1.3.0"
+	DefaultMaxProxyPIDs  = 8
+	AbsoluteMaxProxyPIDs = 128
+)
 
 type ProxyConfig struct {
 	Enabled        bool     `json:"enabled"`
@@ -87,9 +91,10 @@ type ClientEndpoint struct {
 	Password string `json:"password"`
 }
 type ClientPolicy struct {
-	Revision  int64            `json:"revision"`
-	Bindings  []ClientBinding  `json:"bindings"`
-	Endpoints []ClientEndpoint `json:"endpoints"`
+	MaxProxyPIDs int              `json:"maxProxyPids"`
+	Revision     int64            `json:"revision"`
+	Bindings     []ClientBinding  `json:"bindings"`
+	Endpoints    []ClientEndpoint `json:"endpoints"`
 }
 type ClientRoute struct {
 	PID       int    `json:"pid"`
@@ -99,15 +104,17 @@ type ClientRoute struct {
 	Detail    string `json:"detail,omitempty"`
 }
 type ClientSnapshot struct {
-	Processes  []ClientProcess `json:"processes"`
-	Routes     []ClientRoute   `json:"routes"`
-	Backend    string          `json:"backend"`
-	Revision   int64           `json:"revision"`
-	Error      string          `json:"error,omitempty"`
-	ScanError  string          `json:"scanError,omitempty"`
-	ObservedAt string          `json:"observedAt"`
+	MaxProxyPIDs int             `json:"maxProxyPids,omitempty"` // effective local enforcement bound
+	Processes    []ClientProcess `json:"processes"`
+	Routes       []ClientRoute   `json:"routes"`
+	Backend      string          `json:"backend"`
+	Revision     int64           `json:"revision"`
+	Error        string          `json:"error,omitempty"`
+	ScanError    string          `json:"scanError,omitempty"`
+	ObservedAt   string          `json:"observedAt"`
 }
 type AgentView struct {
+	MaxProxyPIDs   int             `json:"maxProxyPids,omitempty"` // Windows Client configured machine quota
 	Kind           string          `json:"kind"`
 	Client         ClientSnapshot  `json:"client"`
 	ClientBindings []ClientBinding `json:"clientBindings"`
@@ -223,6 +230,11 @@ func NewRegistry(dir string) (*Registry, error) {
 	s.agents = d.Agents
 	s.enrollments = d.Enrollments
 	for i := range s.agents {
+		// The v1.2 schema had no per-machine quota. Preserve its existing
+		// reservations while assigning a bounded default for new settings.
+		if s.agents[i].Kind == "client" && s.agents[i].MaxProxyPIDs == 0 {
+			s.agents[i].MaxProxyPIDs = max(DefaultMaxProxyPIDs, min(len(s.agents[i].ClientBindings), AbsoluteMaxProxyPIDs))
+		}
 		if s.agents[i].Secret != "" {
 			p, e := unseal(key, s.agents[i].Secret)
 			if e != nil {
@@ -330,6 +342,9 @@ func safeView(a agentDisk) AgentView {
 	v.Client.Processes = slices.Clone(v.Client.Processes)
 	v.Client.Routes = slices.Clone(v.Client.Routes)
 	v.ClientBindings = slices.Clone(v.ClientBindings)
+	if v.Kind == "client" && v.MaxProxyPIDs == 0 {
+		v.MaxProxyPIDs = DefaultMaxProxyPIDs
+	}
 	if v.Kind == "" {
 		v.Kind = "cloud"
 	}
@@ -391,7 +406,11 @@ func (s *Registry) enrollLocked(in EnrollInput, observed string) (string, string
 	id := randomHex(12)
 	token := randomHex(32)
 	now := time.Now().UTC().Format(time.RFC3339)
-	a := agentDisk{AgentView: AgentView{Kind: in.Kind, ID: id, Name: clean(in.Name, 80), Hostname: clean(in.Hostname, 160), OS: clean(in.OS, 24), Arch: clean(in.Arch, 24), Version: clean(in.Version, 30), ObservedIP: observed, RegisteredAt: now, Status: "pending", Desired: ProxyConfig{Listen: "0.0.0.0", Port: 1080, MaxConnections: 200, Capacity: 8, UDP: true}, History: []Metrics{}, Logs: []AgentLog{}}, TokenHash: SHA(token)}
+	pidQuota := 0
+	if in.Kind == "client" {
+		pidQuota = DefaultMaxProxyPIDs
+	}
+	a := agentDisk{AgentView: AgentView{Kind: in.Kind, ID: id, Name: clean(in.Name, 80), Hostname: clean(in.Hostname, 160), OS: clean(in.OS, 24), Arch: clean(in.Arch, 24), Version: clean(in.Version, 30), ObservedIP: observed, RegisteredAt: now, Status: "pending", MaxProxyPIDs: pidQuota, Desired: ProxyConfig{Listen: "0.0.0.0", Port: 1080, MaxConnections: 200, Capacity: 8, UDP: true}, History: []Metrics{}, Logs: []AgentLog{}}, TokenHash: SHA(token)}
 	s.agents = append(s.agents, a)
 	if err := s.saveLocked(); err != nil {
 		s.agents = s.agents[:len(s.agents)-1]
@@ -525,7 +544,8 @@ func (s *Registry) Report(in Heartbeat, observed string) (HeartbeatResponse, err
 				return HeartbeatResponse{}, errors.New("client inventory too large")
 			}
 			clientState := ClientSnapshot{Backend: clean(in.Client.Backend, 48), Revision: in.Client.Revision,
-				Error: clean(in.Client.Error, 360), ScanError: clean(in.Client.ScanError, 360), ObservedAt: clean(in.Client.ObservedAt, 40),
+				MaxProxyPIDs: min(max(in.Client.MaxProxyPIDs, 0), AbsoluteMaxProxyPIDs),
+				Error:        clean(in.Client.Error, 360), ScanError: clean(in.Client.ScanError, 360), ObservedAt: clean(in.Client.ObservedAt, 40),
 				Processes: make([]ClientProcess, 0, len(in.Client.Processes)),
 				Routes:    make([]ClientRoute, 0, len(in.Client.Routes))}
 			for _, p := range in.Client.Processes {
@@ -739,12 +759,50 @@ func (s *Registry) Delete(id string) error {
 	return errors.New("agent not found")
 }
 
+// SetClientMaxProxyPIDs persists the Windows machine's allowed PID quota.
+// Lowering the quota cannot silently evict reservations. Both this and
+// UpdateClientBindingsCAS hold the same registry lock for atomic enforcement.
+func (s *Registry) SetClientMaxProxyPIDs(id string, limit int, expectedRevision int64) (AgentView, error) {
+	if limit < 1 || limit > AbsoluteMaxProxyPIDs {
+		return AgentView{}, fmt.Errorf("每台机器允许代理的 PID 数量须为 1-%d", AbsoluteMaxProxyPIDs)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.agents {
+		a := &s.agents[i]
+		if a.ID != id || a.Kind != "client" {
+			continue
+		}
+		if expectedRevision >= 0 && a.Revision != expectedRevision {
+			return AgentView{}, errors.New("配置修订版本已变化，请刷新页面重试")
+		}
+		if len(a.ClientBindings) > limit {
+			return AgentView{}, fmt.Errorf("当前机器已有 %d 个 PID 绑定，请先解除至少 %d 个绑定", len(a.ClientBindings), len(a.ClientBindings)-limit)
+		}
+		if a.MaxProxyPIDs == limit {
+			return safeView(*a), nil
+		}
+		before, oldRevision, oldDesiredAt := a.MaxProxyPIDs, a.Revision, a.DesiredAt
+		a.MaxProxyPIDs = limit
+		a.Revision++
+		a.DesiredAt = time.Now().UTC().Format(time.RFC3339)
+		if err := s.saveLocked(); err != nil {
+			a.MaxProxyPIDs, a.Revision, a.DesiredAt = before, oldRevision, oldDesiredAt
+			return AgentView{}, err
+		}
+		return safeView(*a), nil
+	}
+	return AgentView{}, errors.New("Windows Client 不存在")
+}
+
 // UpdateClientBindings validates reported PID identity and enforces cluster-wide
-// allocation limits atomically under the Registry lock. capacity includes local
-// reservations passed in by the controller (which owns the node inventory).
+// and per-machine allocation limits atomically under the Registry lock.
 func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, capacity map[string]int) (AgentView, error) {
-	if len(requested) > 64 {
-		return AgentView{}, errors.New("最多绑定 64 个进程")
+	return s.UpdateClientBindingsCAS(id, requested, capacity, -1)
+}
+func (s *Registry) UpdateClientBindingsCAS(id string, requested []ClientBinding, capacity map[string]int, expectedRevision int64) (AgentView, error) {
+	if len(requested) > AbsoluteMaxProxyPIDs {
+		return AgentView{}, fmt.Errorf("每台机器最多绑定 %d 个 PID", AbsoluteMaxProxyPIDs)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -759,6 +817,16 @@ func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, ca
 		return AgentView{}, errors.New("Windows Client 不存在")
 	}
 	a := &s.agents[idx]
+	if expectedRevision >= 0 && a.Revision != expectedRevision {
+		return AgentView{}, errors.New("绑定策略已经变化，请刷新页面重试")
+	}
+	limit := a.MaxProxyPIDs
+	if limit == 0 {
+		limit = DefaultMaxProxyPIDs
+	}
+	if len(requested) > limit {
+		return AgentView{}, fmt.Errorf("当前机器最多允许 %d 个 PID 使用代理（本次请求 %d 个）", limit, len(requested))
+	}
 	if a.Client.ScanError != "" || a.Client.ObservedAt == "" {
 		return AgentView{}, errors.New("客户端进程清单尚不可用")
 	}
@@ -775,6 +843,7 @@ func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, ca
 		live[fmt.Sprintf("%d:%s", p.PID, p.StartTime)] = p
 	}
 	seen := map[string]bool{}
+	seenPID := map[int]bool{}
 	checked := make([]ClientBinding, 0, len(requested))
 	reserved := map[string]int{}
 	for i, other := range s.agents {
@@ -790,10 +859,11 @@ func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, ca
 			return AgentView{}, fmt.Errorf("PID %d 已退出或发生重用，请刷新", b.PID)
 		}
 		key := fmt.Sprintf("%d:%s", b.PID, b.StartTime)
-		if seen[key] {
-			return AgentView{}, errors.New("同一进程重复绑定")
+		if seen[key] || seenPID[b.PID] {
+			return AgentView{}, errors.New("同一 PID 重复绑定")
 		}
 		seen[key] = true
+		seenPID[b.PID] = true
 		if capacity[b.NodeID] <= 0 {
 			return AgentView{}, fmt.Errorf("代理节点 %s 不可用", b.NodeID)
 		}
@@ -804,6 +874,7 @@ func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, ca
 		checked = append(checked, ClientBinding{PID: p.PID, Name: p.Name, StartTime: p.StartTime, NodeID: b.NodeID})
 	}
 	before := slices.Clone(a.ClientBindings)
+	beforeDesiredAt := a.DesiredAt
 	if slices.Equal(before, checked) {
 		return safeView(*a), nil
 	}
@@ -813,18 +884,28 @@ func (s *Registry) UpdateClientBindings(id string, requested []ClientBinding, ca
 	if err := s.saveLocked(); err != nil {
 		a.ClientBindings = before
 		a.Revision--
+		a.DesiredAt = beforeDesiredAt
 		return AgentView{}, err
 	}
 	return safeView(*a), nil
 }
 
 func (s *Registry) ClientBindings(id string) (int64, []ClientBinding, bool) {
+	rev, _, bindings, ok := s.ClientSettings(id)
+	return rev, bindings, ok
+}
+
+func (s *Registry) ClientSettings(id string) (int64, int, []ClientBinding, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, a := range s.agents {
 		if a.ID == id && a.Kind == "client" {
-			return a.Revision, slices.Clone(a.ClientBindings), true
+			limit := a.MaxProxyPIDs
+			if limit == 0 {
+				limit = DefaultMaxProxyPIDs
+			}
+			return a.Revision, limit, slices.Clone(a.ClientBindings), true
 		}
 	}
-	return 0, nil, false
+	return 0, 0, nil, false
 }

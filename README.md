@@ -1,9 +1,9 @@
-# NodeSwarm v1.2 — 分布式云代理与 Windows 客户端管理平台
+# NodeSwarm v1.3 — 分布式云代理与 Windows 客户端管理平台
 
 面向自有云服务器及 Windows 工作站的 **Controller + Cloud Agent + Windows Client + SOCKS5 节点池** 运维平台。
 将分散在 Linux / Windows 主机上的 SOCKS5 服务，统一到一个轻量的 Web 控制台中管理。系统提供节点注册、心跳、主机指标、凭据保护、远程配置/启停、批量操作、节点监测与规则导出。Go 标准库构建，前端已嵌入二进制，无需 Node.js、数据库或额外 Web 静态资源。
 
-> **产品边界（重要）**：v1.2 新增 Windows Client 进程发现、按 PID+启动时间绑定策略，以及可选 ProxyBridge 进程名规则执行。它**尚不具备**同名 `Client.exe` 不同 PID 走不同出口的透明代理能力，也不保证突破任何游戏的多开规则。默认客户端模式仅观察；ProxyBridge 只按**进程名**执行规则，并会拒绝发现的冲突配置。策略绑定与已启动代理引擎不等于实际出口已验证。
+> **产品边界（重要）**：v1.3 在 Windows Client 进程发现基础上加入每机独立 PID 配额（默认 8，可设 1～128）和客户端二次校验；v1.2 新增 Windows Client 进程发现、按 PID+启动时间绑定策略，以及可选 ProxyBridge 进程名规则执行。它**尚不具备**同名 `Client.exe` 不同 PID 走不同出口的透明代理能力，也不保证突破任何游戏的多开规则。默认客户端模式仅观察；ProxyBridge 只按**进程名**执行规则，并会拒绝发现的冲突配置。策略绑定与已启动代理引擎不等于实际出口已验证。
 
 ## Git 源码仓库与构建
 
@@ -23,7 +23,7 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 
 ## 功能与状态
 
-| 能力 | v1.1 状态 | 说明 |
+| 能力 | v1.3 状态 | 说明 |
 |---|---|---|
 | Web 管理端 | **已实现** | 登录、总览、节点池、Cloud Agent、Windows Client、告警及事件 |
 | 多云主机 Agent | **已实现** | Linux amd64/arm64，Windows amd64；Agent 主动出站连接，主控集中查看 |
@@ -37,6 +37,7 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 | 固定 UDP 中继端口池 | **已实现** | 可配置 `udpPortStart`～`udpPortEnd`（最多 128 个），可按云安全组固定放行 |
 | ProxyBridge 规则导出 | **已实现** | 产生 `.pbprofile`，按应用名路由，文件含敏感代理凭据 |
 | Windows Client 进程发现 / 节点策略 | **已实现** | 按 PID + 进程启动时间绑定，容量检查、版本同步、进程退出失效 |
+| 每台 Windows 机器代理 PID 配额 | **已实现（策略配额）** | 默认 8、可配置 1～128；Controller 原子校验、数据持久化、乐观锁、Client 二次校验；不等于尚未实现的网络内核强制隔离 |
 | 可选 ProxyBridge 进程名路由 | **代码已集成，未实机验收** | 检测同名冲突；仅可将同一可执行名的实例统一分流，实际出口未确认 |
 | Windows 同名 PID 独立透明代理 | **未实现** | 需要 PID 级 Windows 底层分流引擎及真实出口隔离验收 |
 | 服务器任意命令/远程桌面 | **不提供** | 此版管控代理服务与指标，不运行任意系统命令 |
@@ -104,6 +105,28 @@ $env:NODE_MANAGER_PORT = '8188'
 ```
 
 默认只监听本机回环地址。**不要为了远程访问直接将未加 TLS 的 8088 端口暴露到互联网。**
+
+## v1.3 新增：每台 Windows 机器可代理 PID 的数量上限
+
+在 **Windows 客户端 → 选择设备 → 本机可代理 PID 数量上限** 设置配额：
+
+- 默认 **8 个 PID**，可设置 **1～128 个**；每台机器单独计算，不影响其他 Windows 客户端。
+- Controller 对 `PUT /api/clients/{id}/bindings` 原子校验配额和每个代理节点的容量；超额返回 HTTP **409**，不会部分应用。
+- 调小配额时，若已绑定数量超过新上限，要求先解除多余绑定。修改采用修订版本比较，避免多人同时编辑覆盖。
+- Windows Client 再次检查实际下发绑定数量；在 `client.env` 中可额外设置 `NODE_MANAGER_CLIENT_PID_HARD_LIMIT=4` 作为**本机强制策略上限**。实际执行采用“主控配额和本机硬上限中的较小者”。超过时，Client 停止已启动的受管 ProxyBridge 进程并报告 `pid_limit_exceeded`。
+- **严格区分配额与网络防护**：当前限制的是 NodeSwarm 的已绑定 PID 数量及受管代理引擎是否启动，**无法阻止应用在引擎停止后直接连接互联网**，也无法保证 ProxyBridge 进程名规则在新实例启动的一瞬间满足 PID 级隔离。真正的逐 PID 出口强制控制仍需经过 Windows 驱动开发和实机验证。
+
+### 相关 API
+
+```http
+PUT /api/clients/{id}/limits
+Authorization: Bearer <administrator-token>
+Content-Type: application/json
+
+{"maxProxyPids":4,"expectedRevision":2}
+```
+
+修改绑定时同样可传 `expectedRevision`，并通过客户端管理页看到已分配/配额和执行结果。
 
 ## v1.2 新增：Windows Client Agent 和真实进程策略同步
 

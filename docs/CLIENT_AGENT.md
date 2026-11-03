@@ -1,11 +1,12 @@
-# Windows Client Agent: deployment, policy, and verification (v1.2)
+# Windows Client Agent: deployment, policy, and verification (v1.3)
 
 ## What it does
 
 - Runs separately from the cloud SOCKS5 server on a Windows workstation.
 - Uses an outbound authenticated Controller heartbeat. First enrollment requires a one-use token; subsequent starts reuse the machine's local credential.
 - Scans only the configured executable basenames (default `Client.exe`), reporting `{PID, startTime, name, path}` with 12-second collection caching.
-- Receives bindings selected in the Web console, keyed by the *observed* PID and process start time. The Controller checks identity and per-node capacity before accepting a binding.
+- Receives bindings selected in the Web console, keyed by the *observed* PID and process start time. The Controller checks identity, per-node capacity and an independent per-workstation PID quota before accepting a binding (default 8, range 1–128).
+- Applies a second, independent local PID count check before launching any managed proxy backend. Optionally set `NODE_MANAGER_CLIENT_PID_HARD_LIMIT` for a hard device-side upper bound.
 - Reports explicit route states. **Neither a stored binding nor a successful ProxyBridge CLI start proves which public IP a game uses.**
 
 ## Windows installation (administrator PowerShell)
@@ -19,8 +20,9 @@ notepad "$env:ProgramData\NodeSwarmClient\client.env"
 ```
 
 3. Set `NODE_MANAGER_CONTROLLER` to your HTTPS Controller URL and `NODE_MANAGER_ENROLL_KEY` to a one-use registration key from **Settings → Agent enrollment**. Change `NODE_MANAGER_AGENT_NAME` and `NODE_MANAGER_CLIENT_TARGETS` to suit the workstation. For multiple executable basenames, separate them with semicolons.
-4. Keep `NODE_MANAGER_CLIENT_ENGINE=observe` initially. The client **does not intercept application traffic** in this mode.
-5. Start and verify:
+4. Optional: set `NODE_MANAGER_CLIENT_PID_HARD_LIMIT=4` to cap this workstation at 4 proxy-bound PIDs, regardless of a higher Controller quota. Omit it to follow Controller limits only.
+5. Keep `NODE_MANAGER_CLIENT_ENGINE=observe` initially. The client **does not intercept application traffic** in this mode.
+6. Start and verify:
 
 ```powershell
 Start-ScheduledTask -TaskName NodeSwarmClient
@@ -29,6 +31,10 @@ Get-ScheduledTaskInfo -TaskName NodeSwarmClient
 ```
 
 `client.env` and `data/agent.json` are restricted to SYSTEM and Administrators by the install script. Store the bootstrap token only until enrollment succeeds, then remove it from `client.env`. Reuse the existing `data/agent.json` for future restarts; do not clone it to another workstation.
+
+## Per-workstation PID quotas
+
+The quota is a centrally persisted **assignment limit**. It is not a kernel firewall. Controller and Client both refuse over-quota policies. Reducing a quota while bindings exist is rejected until those bindings are removed. The optional workstation hard limit can only tighten, not loosen, the Controller quota. `ClientSnapshot.maxProxyPids` reports the effective limit received by the running client. The UI labels assignments as *planned* unless an engine has independently verified actual network egress.
 
 ## Optional ProxyBridge mode (process-NAME routing only)
 
@@ -72,7 +78,8 @@ The CLI profile contains the SOCKS5 password; never distribute it as part of a p
 | `POST` | `/api/agent/heartbeat` | Client's unique credential | Observed processes/routes and desired policy exchange |
 | `GET` | `/api/clients` | Admin | Redacted client registry and last known inventory |
 | `GET` | `/api/clients/{id}` | Admin | One client's redacted detail |
-| `PUT` | `/api/clients/{id}/bindings` | Admin | Replace bound PID/start-time/node list; atomic capacity check |
+| `PUT` | `/api/clients/{id}/bindings` | Admin | Replace bound PID/start-time/node list; atomic capacity + per-machine quota + optional expected revision check |
+| `PUT` | `/api/clients/{id}/limits` | Admin | Persist workstation quota `maxProxyPids` (1–128); optional `expectedRevision` |
 | `DELETE` | `/api/clients/{id}` | Admin | Revoke workstation registration |
 
 The Controller does not execute arbitrary commands on client workstations. Only an explicitly configured upstream ProxyBridge CLI can be spawned, with fixed command arguments and a generated profile.

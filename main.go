@@ -68,7 +68,7 @@ func decode(r *http.Request, out any) error {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		send(w, 200, map[string]any{"status": "ok", "mode": "controller", "version": "1.2.0"})
+		send(w, 200, map[string]any{"status": "ok", "mode": "controller", "version": control.AgentVersion})
 	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		nodes, as, ev := a.store.Snapshot()
@@ -370,10 +370,18 @@ func main() {
 		defer stop()
 		log.Printf("Starting %s %q for %s", *mode, display, url)
 		clientEngine := os.Getenv("NODE_MANAGER_CLIENT_ENGINE")
+		hardPIDLimit := 0
+		if raw := strings.TrimSpace(os.Getenv("NODE_MANAGER_CLIENT_PID_HARD_LIMIT")); raw != "" {
+			var parseErr error
+			hardPIDLimit, parseErr = strconv.Atoi(raw)
+			if parseErr != nil || hardPIDLimit < 1 || hardPIDLimit > control.AbsoluteMaxProxyPIDs {
+				log.Fatalf("NODE_MANAGER_CLIENT_PID_HARD_LIMIT must be 1-%d (omit to use the Controller limit)", control.AbsoluteMaxProxyPIDs)
+			}
+		}
 		if err := agent.Run(ctx, agent.Config{Controller: url, Name: display, EnrollKey: os.Getenv("NODE_MANAGER_ENROLL_KEY"), DataDir: agentDir,
 			AllowInsecureHTTP: os.Getenv("NODE_MANAGER_ALLOW_INSECURE_HTTP") == "1", Role: *mode,
 			ClientEngine: clientEngine, ProxyBridgeCLI: os.Getenv("NODE_MANAGER_PROXYBRIDGE_CLI"),
-			ClientTargets: os.Getenv("NODE_MANAGER_CLIENT_TARGETS")}); err != nil {
+			ClientTargets: os.Getenv("NODE_MANAGER_CLIENT_TARGETS"), ClientPIDHardLimit: hardPIDLimit}); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -423,7 +431,7 @@ func main() {
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && os.Getenv("NODE_MANAGER_ALLOW_PUBLIC_LISTEN") != "1" {
 		log.Fatal("refusing public HTTP binding; use Caddy/Nginx HTTPS reverse proxy to 127.0.0.1:8088, or explicitly set NODE_MANAGER_ALLOW_PUBLIC_LISTEN=1 for secure private networks")
 	}
-	fmt.Printf("NodeSwarm v1.2: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
+	fmt.Printf("NodeSwarm v1.3: http://%s\nData directory: %s\nAdmin token: %s\nEnrollment token: %s\n", addr, dataDir, filepath.Join(dataDir, "admin.token"), filepath.Join(dataDir, "enroll.token"))
 	srv := &http.Server{Addr: addr, Handler: (&app{store: store, registry: registry, alerts: alerts, adminToken: adminToken, enrollKey: enrollKey}).routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 75 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

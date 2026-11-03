@@ -43,3 +43,15 @@ td{font-size:13px;line-height:1.45}
 .client-drawer .client-status-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:15px}
 .client-drawer .client-status-row .muted{font-size:11px;margin-left:auto}
 @media(max-width:760px){.client-drawer{width:100%}.client-drawer .drawer-content{padding:16px}.client-drawer .client-status-row .muted{margin-left:0}}
+
+/* v1.3: compact, explicit per-workstation PID quota control */
+.pid-quota-header {display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 10px}
+.pid-quota-header strong {font-size:20px;font-variant-numeric:tabular-nums}
+.pid-quota-track {height:7px;background:var(--border,#e2e8f0);border-radius:999px;overflow:hidden}
+.pid-quota-track > span {height:100%;display:block;background:var(--accent,#238636);border-radius:999px;transition:width .2s ease}
+.pid-quota-form {display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+.pid-quota-form label {font-size:12px;font-weight:600;flex:1;min-width:160px}
+.pid-quota-form input {width:100px;max-width:100px;text-align:center}
+.pid-quota-form button {white-space:nowrap}
+/* Notifications must not cover interactive drawer/footer controls. */
+#toast-region, #toast-region .toast { pointer-events:none; }
