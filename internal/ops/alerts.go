@@ -47,6 +47,9 @@ func Evaluate(agents []control.AgentView, nodes []manager.Node, now time.Time) [
 			out = append(out, Alert{base + "offline", sev, "agent", "Agent 心跳中断", "最后心跳：" + a.LastSeen + "；检查服务器和出站 HTTPS", a.ID, a.Name, ""})
 			continue
 		}
+		if a.Kind == "client" {
+			out = append(out, evaluateClientAlerts(a, now)...)
+		}
 		if a.Runtime.Status == "error" {
 			out = append(out, Alert{base + "proxy-error", "critical", "agent", "SOCKS5 服务运行异常", a.Runtime.Error, a.ID, a.Name, ""})
 		} else if a.Desired.Enabled && a.Runtime.Error != "" && a.Runtime.Revision != a.Revision {
