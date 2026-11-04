@@ -447,7 +447,7 @@ func (p *Server) serve(c net.Conn) {
 			_ = writeReply(c, 7, nil)
 			return
 		}
-		p.associateUDP(c)
+		p.associateUDP(c, host, port)
 	default:
 		_ = writeReply(c, 7, nil)
 	}
@@ -612,7 +612,40 @@ func writeUDPAssociateReply(c net.Conn, publicHost string, port int) error {
 	return err
 }
 
-func (p *Server) associateUDP(c net.Conn) {
+// validateUDPAssociateSource applies RFC1928's optional client UDP endpoint.
+// An unspecified address/port means the server must learn the source from the
+// first UDP datagram, but that datagram must still have the TCP peer's IP.
+// Domain-name claims are rejected rather than being used for attribution.
+func validateUDPAssociateSource(peerIP net.IP, host string, port int) error {
+	if peerIP == nil || port < 0 || port > 65535 {
+		return errors.New("invalid UDP association peer or port")
+	}
+	want := net.ParseIP(host)
+	if want == nil {
+		return errors.New("UDP association source must be a numeric address")
+	}
+	if !want.IsUnspecified() && !want.Equal(peerIP) {
+		return errors.New("UDP association address does not match authenticated TCP peer")
+	}
+	return nil
+}
+
+// A nonzero port in UDP ASSOCIATE pins the authenticated UDP source port.
+// When the client leaves the port unspecified, the first valid datagram pins
+// the port for the life of this TCP-authenticated association.
+func udpSourceMatches(src *net.UDPAddr, tcpIP net.IP, requestedPort int, pinned *net.UDPAddr) bool {
+	if src == nil || tcpIP == nil || !src.IP.Equal(tcpIP) || (requestedPort != 0 && src.Port != requestedPort) {
+		return false
+	}
+	return pinned == nil || (src.IP.Equal(pinned.IP) && src.Port == pinned.Port)
+}
+
+func (p *Server) associateUDP(c net.Conn, requestedHost string, requestedPort int) {
+	tcpPeer, ok := c.RemoteAddr().(*net.TCPAddr)
+	if !ok || validateUDPAssociateSource(tcpPeer.IP, requestedHost, requestedPort) != nil {
+		_ = writeReply(c, 2, nil)
+		return
+	}
 	sock, release, e := p.openUDPRelay()
 	if e != nil {
 		_ = writeReply(c, 1, nil)
@@ -626,7 +659,7 @@ func (p *Server) associateUDP(c net.Conn) {
 	_ = c.SetDeadline(time.Time{})
 	done := make(chan struct{})
 	go func() { _, _ = io.Copy(io.Discard, c); close(done); _ = sock.Close() }()
-	clientIP := c.RemoteAddr().(*net.TCPAddr).IP
+	clientIP := tcpPeer.IP
 	var clientAddr atomic.Pointer[net.UDPAddr]
 	// Each UDP target has its own connected socket so responses cannot be spoofed.
 	type peer struct {
@@ -677,14 +710,13 @@ func (p *Server) associateUDP(c net.Conn) {
 			}
 			return
 		}
-		if !src.IP.Equal(clientIP) {
+		if !udpSourceMatches(src, clientIP, requestedPort, clientAddr.Load()) {
 			continue
 		}
 		if clientAddr.Load() == nil {
 			clientAddr.CompareAndSwap(nil, src)
 		}
-		pinned := clientAddr.Load()
-		if pinned == nil || !src.IP.Equal(pinned.IP) || src.Port != pinned.Port {
+		if !udpSourceMatches(src, clientIP, requestedPort, clientAddr.Load()) {
 			continue
 		}
 		host, port, payload, e := parseUDP(buf[:n])
