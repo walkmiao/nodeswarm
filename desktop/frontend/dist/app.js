@@ -6,6 +6,7 @@
   const bridge = window.go?.main?.App;
   const demo = new URLSearchParams(location.search).get('preview') === '1' && !bridge;
   let tab = 'overview', busy = false, lastToast = 0, lastSettingsVersion = '';
+  let lastPreviewKey = '', lastProcessesKey = '', lastNodesKey = '', lastLogsKey = '';
   let state = {settings:{controller:'',name:'',targets:'Client.exe',engine:'observe',pidHardLimit:0,autoConnect:true},running:false,connected:false,status:'disconnected',credentialReady:false,lastSync:'',lastError:'',client:{processes:[],routes:[],backend:'observe'},remote:{clientBindings:[],maxProxyPids:8,revision:0},nodes:[],logs:[]};
   if (demo) {
     state={settings:{controller:'https://console.nodeswarm.local',name:'Game-PC-01',targets:'Client.exe',engine:'observe',pidHardLimit:8,autoConnect:true},running:true,connected:true,status:'online',credentialReady:true,lastSync:new Date().toISOString(),lastError:'',client:{processes:[{pid:18320,name:'Client.exe',path:'D:\\Game\\Client.exe',startTime:'2026-11-03T08:43:12Z'},{pid:18496,name:'Client.exe',path:'D:\\Game\\Client.exe',startTime:'2026-11-03T08:44:10Z'},{pid:19180,name:'Client.exe',path:'D:\\Game\\Client.exe',startTime:'2026-11-03T09:01:26Z'}],routes:[{pid:18320,status:'planned_only',nodeId:'n1'}],backend:'observe',observedAt:new Date().toISOString()},remote:{maxProxyPids:8,revision:2,clientBindings:[{pid:18320,startTime:'2026-11-03T08:43:12Z',nodeId:'n1',name:'Client.exe'}]},nodes:[{id:'n1',name:'华东 · 上海 01',host:'203.0.113.10',port:1080,region:'上海',capacity:8,enabled:true,lastStatus:'healthy',latencyMs:34},{id:'n2',name:'华南 · 广州 02',host:'198.51.100.22',port:1080,region:'广州',capacity:8,enabled:true,lastStatus:'healthy',latencyMs:52},{id:'n3',name:'华北 · 北京 03',host:'192.0.2.34',port:1080,region:'北京',capacity:4,enabled:true,lastStatus:'untested',latencyMs:0}],logs:['09:35:22  已同步 Controller 配置（修订 2）','09:35:21  主控连接已建立','09:34:58  本机进程采集完成：3 个 Client.exe']};
@@ -50,30 +51,38 @@
       return `<tr><td><div class="process-name">${esc(String(p.name).toLowerCase())}</div><div class="process-sub" title="${esc(p.path)}">${esc(p.path)}</div></td><td class="pid">${esc(p.pid)}</td><td>${b?esc(node?.name||'已失效节点'):'未绑定'}</td><td>${status}</td><td><div class="assign-controls"><select class="assign-select" aria-label="为 PID ${esc(p.pid)} 选择节点" data-node-for="${p.pid}"><option value="">选择节点</option>${opts}</select><button class="action-link" data-assign="${p.pid}" data-start="${esc(p.startTime)}">分配</button>${b?`<button class="action-link danger" data-unassign="${p.pid}" data-start="${esc(p.startTime)}">解绑</button>`:''}</div></td></tr>`;
     }).join('')}</tbody></table>`;
   }
-  function renderNodes(){const nodes=state.nodes||[];$('#nodes-table').innerHTML=nodes.length?`<table><thead><tr><th style="width:32%">节点</th><th style="width:27%">SOCKS5 地址</th><th style="width:14%">地区</th><th style="width:13%">容量</th><th>健康状态</th></tr></thead><tbody>${nodes.map(n=>`<tr><td><div class="node-name"><span class="node-icon">◫</span>${esc(n.name)}</div></td><td class="node-host">${esc(n.host)}:${esc(n.port)}</td><td>${esc(n.region||'—')}</td><td>${esc((state.remote?.clientBindings||[]).filter(b=>b.nodeId===n.id).length)} / ${esc(n.capacity)}</td><td>${n.enabled?tag(n.lastStatus==='healthy'||n.lastStatus==='ok'?'正常':n.lastStatus==='untested'?'待检测':n.lastStatus==='error'?'异常':'已启用',n.lastStatus==='error'?'warn':n.lastStatus==='healthy'||n.lastStatus==='ok'?'success':'muted'):tag('已停用')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-symbol">◫</div><strong>暂无代理节点</strong><small>请在云端 Controller 中配置或导入 SOCKS5 节点。</small></div>'}
+  function renderNodes(){const nodes=state.nodes||[];const key=JSON.stringify([nodes,state.remote?.clientBindings||[]]);if(key===lastNodesKey)return;lastNodesKey=key;$('#nodes-table').innerHTML=nodes.length?`<table><thead><tr><th style="width:32%">节点</th><th style="width:27%">SOCKS5 地址</th><th style="width:14%">地区</th><th style="width:13%">容量</th><th>健康状态</th></tr></thead><tbody>${nodes.map(n=>`<tr><td><div class="node-name"><span class="node-icon">◫</span>${esc(n.name)}</div></td><td class="node-host">${esc(n.host)}:${esc(n.port)}</td><td>${esc(n.region||'—')}</td><td>${esc((state.remote?.clientBindings||[]).filter(b=>b.nodeId===n.id).length)} / ${esc(n.capacity)}</td><td>${n.enabled?tag(n.lastStatus==='healthy'||n.lastStatus==='ok'?'正常':n.lastStatus==='untested'?'待检测':n.lastStatus==='error'?'异常':'已启用',n.lastStatus==='error'?'warn':n.lastStatus==='healthy'||n.lastStatus==='ok'?'success':'muted'):tag('已停用')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-symbol">◫</div><strong>暂无代理节点</strong><small>请在云端 Controller 中配置或导入 SOCKS5 节点。</small></div>'}
   function render(){const procs=state.client?.processes||[],routes=state.client?.routes||[],bound=state.remote?.clientBindings||[],nodes=state.nodes||[];const connected=!!state.connected, running=!!state.running;
     $('#machine-name').textContent=state.settings?.name||'本机客户端';$('#top-connection-dot').style.background=state.connected?'var(--green)':state.running?'var(--amber)':'var(--t4)';$('#side-title').textContent=connected?'主控已连接':running?'正在重连':'未连接';$('#side-subtitle').textContent=state.settings?.controller||'等待连接 Controller';$('#side-dot').className='status-dot '+(connected?'':running?'warn':'muted');$('#sync-label').textContent=connected?'上次同步 '+fmtTime(state.lastSync):running?'正在连接…':'未连接';$('#process-count').textContent=procs.length;
     $('#connect-btn').textContent=running?'断开连接':'连接主控';$('#connect-btn').className='btn '+(running?'btn-danger':'btn-primary');$('#metric-procs').textContent=procs.length;$('#metric-proc-note').textContent='目标进程 '+(state.settings?.targets||'Client.exe');$('#metric-bound').textContent=bound.length;$('#metric-limit').textContent=quota();$('#metric-quota-note').textContent=bound.length>=quota()?'已达到本机配额上限':`还可分配 ${Math.max(0,quota()-bound.length)} 个 PID`;$('#metric-nodes').textContent=nodes.filter(n=>n.enabled).length;$('#metric-engine').textContent=state.settings?.engine==='pidtcp'?'PID TCP（实验）':state.settings?.engine==='proxybridge'?'ProxyBridge':'Observe';$('#metric-mode-note').textContent=state.settings?.engine==='pidtcp'?'只接管 TCP · 不保证防直连 · 出口未验证':state.settings?.engine==='proxybridge'?'进程名规则 · 出口未验证':'仅监控，不接管网络连接';$('#setup-notice').hidden=!!state.settings?.controller;
-    $('#overview-processes').innerHTML=processTable(procs,true);
-    // Avoid resetting the user's node selection every time the background
-    // 4-second status poll refreshes the process table.
-    const selections=Object.fromEntries($$('[data-node-for]').map(x=>[x.dataset.nodeFor,x.value]));
-    const focusPid=document.activeElement?.dataset?.nodeFor;
-    $('#all-processes').innerHTML=processTable(procs);
-    for(const item of $$('[data-node-for]')) {
-      const selected=selections[item.dataset.nodeFor];
-      if(selected && [...item.options].some(o=>o.value===selected))item.value=selected;
+    const previewKey=JSON.stringify([procs.slice(0,5),bound,routes,nodes,connected]);
+    if(previewKey!==lastPreviewKey){lastPreviewKey=previewKey;$('#overview-processes').innerHTML=processTable(procs,true);}
+    // A 4-second status poll must not remount unchanged controls. This keeps
+    // the selected option and native dropdown focus stable in WebView2.
+    const processesKey=JSON.stringify([procs,bound,routes,nodes,connected]);
+    if(processesKey!==lastProcessesKey){
+      lastProcessesKey=processesKey;
+      const selections=Object.fromEntries($$('[data-node-for]').map(x=>[x.dataset.nodeFor,x.value]));
+      const focusPid=document.activeElement?.dataset?.nodeFor;
+      $('#all-processes').innerHTML=processTable(procs);
+      for(const item of $$('[data-node-for]')) {
+        const selected=selections[item.dataset.nodeFor];
+        if(selected && [...item.options].some(o=>o.value===selected))item.value=selected;
+      }
+      if(focusPid){const selected=$$('[data-node-for]').find(x=>x.dataset.nodeFor===focusPid);if(selected)selected.focus();}
     }
-    if(focusPid){const selected=$$('[data-node-for]').find(x=>x.dataset.nodeFor===focusPid);if(selected)selected.focus();}$('#quota-badge').textContent=`${bound.length} / ${quota()} PID`;$('#autofill-btn').disabled=!connected || procs.length===0 || !nodes.length;
+    $('#quota-badge').textContent=`${bound.length} / ${quota()} PID`;$('#autofill-btn').disabled=!connected || procs.length===0 || !nodes.length;
     $('#overview-connect').textContent=connected?'心跳正常，连接到 '+state.settings.controller:running?'正在建立安全连接':'未运行';// Keep status badges as stable DOM nodes across refreshes
-    const stepBadge=(id,html)=>{let el=$('#'+id);if(el)el.outerHTML=html.replace('<span','<span id="'+id+'"')};
-    // Restore the stable label node after switching its semantic status.
-
-    stepBadge('overview-connect-badge',tag(connected?'在线':running?'连接中':'离线',connected?'success':running?'warn':'muted'));
-    $('#overview-scan').textContent=state.client?.scanError||`最近发现 ${procs.length} 个目标进程`;stepBadge('overview-scan-badge',tag(state.client?.scanError?'采集异常':running?'正常':'未启动',state.client?.scanError?'warn':running?'success':'muted'));
-    $('#overview-policy').textContent=state.client?.error||`${bound.length} 个 PID 已规划（不代表代理生效），${routes.length} 条执行状态`;stepBadge('overview-policy-badge',tag(state.client?.error?'异常':bound.length?'已规划':'未应用',state.client?.error?'warn':bound.length?'blue':'muted'));
+    const stepBadge=(id,label,kind)=>{const el=$('#'+id);if(el){el.className='tag tag-'+kind;el.textContent=label;}};
+    stepBadge('overview-connect-badge',connected?'在线':running?'连接中':'离线',connected?'success':running?'warn':'muted');
+    $('#overview-scan').textContent=state.client?.scanError||`最近发现 ${procs.length} 个目标进程`;
+    stepBadge('overview-scan-badge',state.client?.scanError?'采集异常':running?'正常':'未启动',state.client?.scanError?'warn':running?'success':'muted');
+    $('#overview-policy').textContent=state.client?.error||`${bound.length} 个 PID 已规划（不代表代理生效），${routes.length} 条执行状态`;
+    stepBadge('overview-policy-badge',state.client?.error?'异常':bound.length?'已规划':'未应用',state.client?.error?'warn':bound.length?'blue':'muted');
+    const logsKey=JSON.stringify(state.logs||[]);
+    if(logsKey!==lastLogsKey){lastLogsKey=logsKey;
     $('#overview-logs').innerHTML=(state.logs||[]).slice(-3).reverse().map(s=>`<div class="log-line">${esc(s)}</div>`).join('')||'<div class="empty" style="padding:15px">暂无事件记录</div>';
-    $('#log-list').innerHTML=(state.logs||[]).slice().reverse().map(s=>`<div class="log-item">${esc(s)}</div>`).join('')||'<div class="empty">暂无运行日志</div>';
+    $('#log-list').innerHTML=(state.logs||[]).slice().reverse().map(s=>`<div class="log-item">${esc(s)}</div>`).join('')||'<div class="empty">暂无运行日志</div>';}
     renderNodes();updateSettings();
   }
   function updateSettings(){const form=$('#settings-form');const settings=state.settings||{};const fingerprint=JSON.stringify(settings);if(fingerprint===lastSettingsVersion)return;lastSettingsVersion=fingerprint;
