@@ -45,6 +45,9 @@ type Service struct {
 	revision  int64
 	state     string
 	lastError string
+	// starter is injectable by tests to exercise a bind failure after the old
+	// listener has been closed. Production always calls Start.
+	starter func(control.ProxyConfig) (*Server, error)
 }
 
 func (s *Service) Snapshot() control.ProxyRuntime {
@@ -66,41 +69,92 @@ func (s *Service) Snapshot() control.ProxyRuntime {
 	r.StartedAt = p.started
 	return r
 }
+
+// Apply advances the acknowledged revision only after the new configuration
+// has actually started. A failed update preserves (or restarts) the previous
+// listener, so Controller can distinguish the live revision from desired state.
 func (s *Service) Apply(revision int64, c control.ProxyConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.revision == revision && ((c.Enabled && s.state == "running") || (!c.Enabled && s.state == "stopped")) {
 		return nil
 	}
-	// Preserve the current listener if the new config fails validation.
 	if c.Enabled {
 		if err := control.ValidateConfig(c); err != nil {
-			s.lastError = err.Error()
-			s.state = "error"
+			s.lastError = "configuration rejected: " + err.Error()
+			if s.server == nil {
+				s.state = "error"
+			}
 			return err
 		}
 	}
-	old := s.server
-	if old != nil {
-		old.Stop()
-		s.server = nil
+	start := s.starter
+	if start == nil {
+		start = Start
 	}
-	s.revision = revision
-	s.lastError = ""
-	s.state = "stopped"
+	old := s.server
 	if !c.Enabled {
+		if old != nil {
+			old.Stop()
+		}
+		s.server = nil
+		s.revision = revision
+		s.lastError = ""
+		s.state = "stopped"
 		return nil
 	}
-	p, err := Start(c)
-	if err != nil {
-		s.state = "error"
-		s.lastError = err.Error()
-		return err
+
+	// A changed socket can be bound and accepted before the existing listener
+	// closes. If it is busy, reject the change without disturbing old users.
+	if old == nil || !sameListenSocket(old.cfg, c) {
+		next, err := start(c)
+		if err != nil {
+			s.lastError = "configuration rejected: " + err.Error()
+			if old == nil {
+				s.state = "error"
+			}
+			return err
+		}
+		s.server = next
+		s.revision = revision
+		s.lastError = ""
+		s.state = "running"
+		if old != nil {
+			old.Stop()
+		}
+		return nil
 	}
-	s.server = p
+
+	// A same-port update cannot open two listeners simultaneously. Close the
+	// old listener, attempt the replacement, and recover the exact old config
+	// if the new listener fails. Never claim the desired revision on rollback.
+	oldConfig := old.cfg
+	old.Stop()
+	s.server = nil
+	next, err := start(c)
+	if err == nil {
+		s.server = next
+		s.revision = revision
+		s.lastError = ""
+		s.state = "running"
+		return nil
+	}
+	recovered, recoverErr := start(oldConfig)
+	if recoverErr != nil {
+		s.state = "error"
+		s.lastError = fmt.Sprintf("configuration failed: %v; rollback failed: %v", err, recoverErr)
+		return fmt.Errorf("%s", s.lastError)
+	}
+	s.server = recovered
 	s.state = "running"
-	return nil
+	s.lastError = "configuration rejected; prior listener restored: " + err.Error()
+	return err
 }
+
+func sameListenSocket(a, b control.ProxyConfig) bool {
+	return a.Listen == b.Listen && a.Port == b.Port
+}
+
 func (s *Service) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
