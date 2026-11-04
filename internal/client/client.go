@@ -91,7 +91,7 @@ func New(c Config) (*Manager, error) {
 func (m *Manager) Observe() control.ClientSnapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.scanLocked()
+	m.scanLocked(false)
 	if m.exited != nil {
 		select {
 		case err := <-m.exited:
@@ -129,8 +129,8 @@ func (m *Manager) Observe() control.ClientSnapshot {
 	snapshot.Routes = slices.Clone(m.state.Routes)
 	return snapshot
 }
-func (m *Manager) scanLocked() {
-	if !m.lastScan.IsZero() && time.Since(m.lastScan) < 12*time.Second {
+func (m *Manager) scanLocked(force bool) {
+	if !force && !m.lastScan.IsZero() && time.Since(m.lastScan) < 12*time.Second {
 		return
 	}
 	m.lastScan = time.Now()
@@ -231,7 +231,12 @@ func (m *Manager) Apply(policy *control.ClientPolicy) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.scanLocked()
+	// A changed policy or a stopped engine must never start from a process
+	// inventory cached by an earlier heartbeat. The PID can already have
+	// exited or been reused during the normal 12-second scan interval.
+	// Unchanged running policies still use bounded periodic scans.
+	forceScan := m.cfg.Engine != "observe" && (m.state.Revision != policy.Revision || m.fingerprint == "")
+	m.scanLocked(forceScan)
 	// A failed scan must never be mistaken for an empty process inventory.
 	if m.scanError != "" {
 		m.state.Revision = policy.Revision
