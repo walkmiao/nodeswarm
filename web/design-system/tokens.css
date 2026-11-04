@@ -1,0 +1,207 @@
+/* ==========================================================================
+   NodeLink Design System — Tokens
+   唯一变量层。任何新页面必须先 @import 本文件，禁止在业务样式里写死颜色。
+   ========================================================================== */
+
+:root {
+  /* ---------- Surface 表面层（由深到浅，共 5 级） ---------- */
+  --bg: #0a0a0b;          /* 页面底色 · 最底层 */
+  --rail: #0c0c0e;        /* 顶栏 / 侧栏 / 底部状态栏 */
+  --panel: #101013;       /* 卡内分区、表头 */
+  --card: #141417;        /* 卡片、输入框、表格容器 */
+  --card-hover: #16161b;  /* 卡片 hover */
+  --card-active: #18181c; /* 行选中 / 高亮行 */
+
+  /* ---------- Line 分割与描边 ---------- */
+  --border: #27272a;      /* 卡片描边（唯一标准描边色） */
+  --border-strong: #3a3a44;/* hover 态描边 */
+  --line: #1b1b1f;        /* 大区块分割（栏与主区之间） */
+  --line2: #1d1d21;       /* 表格行分割 */
+  --line3: #1f1f23;       /* 卡内细分 */
+  --grid: #1f1f23;        /* 图表网格线 */
+
+  /* ---------- Accent 唯一强调色：薄荷青 ---------- */
+  --accent: #5bcfc5;
+  --accent-hover: #68d8ce;
+  --accent-ink: #08120f;  /* 强调色上的文字（深墨绿，非纯黑） */
+  --accent-bg: #10201f;   /* 强调色浅底（pill / chip 背景） */
+  --accent-border: #1e3b37;
+  --accent-deep: #2b7a7a; /* 图表上的参考线、次级描边 */
+
+  /* ---------- Semantic 语义状态色（仅用于状态，不用于装饰） ---------- */
+  --green: #34d399;       /* 在线 / 健康 / 成功 */
+  --amber: #f59e0b;       /* 警告 / 即将到期 / 锁定 */
+  --amber-2: #f5c56b;     /* 警告态文字（提亮一档保证对比度） */
+  --amber-bg: #241a0e;
+  --amber-border: #3a2a10;
+  --rose: #f43f5e;        /* 危险 / 已吊销 / 失败 */
+  --rose-bg: #1e1416;
+  --rose-border: #3a2226;
+  --blue: #4f8fea;        /* 下行流量 / 中性信息（唯一允许的第四色） */
+  --blue-bg: #101a26;
+  --blue-border: #1d3149;
+
+  /* ---------- Text 文字层级（7 级） ---------- */
+  --t1: #fafafa;  /* 标题、关键数值 */
+  --t2: #a1a1aa;  /* 正文、次要标签 */
+  --t3: #71717a;  /* 说明文字、表头、单位 */
+  --t4: #52525b;  /* 极弱信息、序号 */
+  --t5: #3f3f46;  /* 分隔符、禁用文字 */
+  --t6: #2e2e33;  /* 描边辅助 */
+  --t7: #6b6b73;  /* placeholder */
+
+  /* ---------- Typography ---------- */
+  --sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SFMono-Regular", ui-monospace,
+          "Cascadia Mono", Consolas, monospace;
+
+  /* 字号阶梯（12px 基准，桌面工具型 UI，整体偏小是刻意的） */
+  --fs-9: 9px;    /* 图例、角标、mini 分段 */
+  --fs-10: 10px;  /* 表头、单位、元信息、KPI 标签 */
+  --fs-11: 11px;  /* 正文默认、按钮、输入框、表格主文本 */
+  --fs-12: 12px;  /* 侧栏导航、面板正文 */
+  --fs-13: 13px;  /* 区块标题、卡片主标题 */
+  --fs-15: 15px;  /* 页面标题 */
+  --fs-18: 18px;  /* 流程页次级大标题 */
+  --fs-20: 20px;  /* KPI 数值 */
+  --fs-22: 22px;  /* 结果页大数值 */
+  --fs-26: 26px;  /* 步骤页主标题 */
+
+  --fw-regular: 400;
+  --fw-medium: 500;   /* 默认强调：所有按钮、数值、卡片标题 */
+  --fw-semibold: 600; /* 仅用于页面标题与区块标题 */
+
+  --lh-tight: 1.3;
+  --lh-base: 1.4;
+  --lh-loose: 1.6;
+
+  /* ---------- Radius 圆角阶梯 ---------- */
+  --r-xs: 4px;    /* mini 分段、小 chip、复选框 */
+  --r-sm: 6px;    /* 按钮、pill、输入框内元素、侧栏导航 */
+  --r-md: 8px;    /* 搜索框、输入框、节点芯片 */
+  --r-lg: 10px;   /* KPI 卡、内嵌小卡 */
+  --r-xl: 12px;   /* 标准卡片、表格容器、弹窗 */
+  --r-2xl: 16px;  /* 大面板、品牌区 */
+  --r-full: 999px;
+
+  /* ---------- Spacing 4px 基准阶梯 ---------- */
+  --s-1: 2px;
+  --s-2: 4px;
+  --s-3: 6px;
+  --s-4: 8px;
+  --s-5: 10px;
+  --s-6: 12px;
+  --s-7: 14px;
+  --s-8: 16px;
+  --s-9: 20px;
+  --s-10: 24px;
+  --s-11: 28px;
+  --s-12: 32px;
+  --s-13: 40px;
+
+  /* ---------- Size 固定高度（控件与行高，禁止随手取值） ---------- */
+  --h-control-sm: 26px;  /* pill、mini 分段 */
+  --h-control: 32px;     /* 按钮、输入框、搜索框、侧栏导航 */
+  --h-control-lg: 42px;  /* 主流程页主按钮、大输入框 */
+  --h-row: 60px;         /* 表格数据行 */
+  --h-row-head: 40px;    /* 表头 */
+  --h-titlebar: 44px;    /* 客户端标题栏 */
+  --h-statusbar: 52px;   /* 底部操作栏 */
+  --h-kpi: 76px;         /* KPI 卡 */
+
+  /* ---------- Layout 骨架宽度 ---------- */
+  --w-canvas: 1440px;    /* 设计基准宽度 */
+  --w-rail: 76px;        /* 客户端图标导航栏 */
+  --w-sidebar: 240px;    /* 服务端文字导航栏 */
+  --w-aside: 400px;      /* 右侧表单面板 */
+  --w-detail: 340px;     /* 右侧详情信息栏 */
+  --w-content-pad: 24px; /* 主内容区左右内边距 */
+
+  /* ---------- Effect ---------- */
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.02);
+  --focus-ring: 0 0 0 2px rgba(91, 207, 197, 0.28);
+
+  /* ---------- Motion ---------- */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;   /* hover 底色 */
+  --dur-base: 150ms;   /* 描边、颜色过渡 */
+  --dur-slow: 240ms;   /* 面板展开、弹窗 */
+}
+
+/* ==========================================================================
+   Reset & Base — 所有页面继承，不要在页面内重复定义
+   ========================================================================== */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--t1);
+  font-family: var(--sans);
+  font-size: var(--fs-12);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input, textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+  min-width: 0;
+}
+
+input::placeholder { color: var(--t7); }
+
+svg { display: block; }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-sm);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #26262b; border-radius: var(--r-md); }
+::-webkit-scrollbar-thumb:hover { background: #32323a; }
+
+/* ==========================================================================
+   Utilities — 少量通用原子类，够用即可，不要无限扩张
+   ========================================================================== */
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--t3); }
+.spacer { flex: 1 1 auto; }
+.row { display: flex; align-items: center; gap: var(--s-4); }
+
+/* 数字统一用等宽 + 表格数字，避免刷新时抖动 */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+}
+
+/* 单行截断 */
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

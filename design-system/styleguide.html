@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>NodeLink 设计系统 · 组件样本</title>
+<link rel="stylesheet" href="./components.css" />
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  /* 仅本样本页的布局，组件样式全部来自 app/styles.css + tokens.css */
+  body.sg { overflow: auto; background: var(--bg); }
+
+  .sg-top {
+    position: sticky; top: 0; z-index: 20;
+    height: 44px; flex: 0 0 44px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 20px;
+    background: var(--rail);
+    border-bottom: 1px solid var(--line);
+  }
+  .sg-top .t { font-size: 13px; font-weight: 600; color: var(--t1); }
+  .sg-top .v {
+    font-family: var(--mono); font-size: 10px; color: var(--accent);
+    background: var(--accent-bg); border: 1px solid var(--accent-border);
+    border-radius: var(--r-xs); padding: 2px 6px;
+  }
+  .sg-top .meta { font-family: var(--mono); font-size: 10px; color: var(--t4); margin-left: auto; }
+
+  .sg-wrap { display: flex; align-items: flex-start; max-width: 1440px; margin: 0 auto; }
+
+  .sg-nav {
+    position: sticky; top: 44px;
+    flex: 0 0 216px; width: 216px;
+    height: calc(100vh - 44px); overflow-y: auto;
+    padding: 20px 12px;
+    border-right: 1px solid var(--line);
+  }
+  .sg-nav a {
+    display: block; height: 30px; padding: 0 10px;
+    font-size: 11px; color: var(--t3); line-height: 30px;
+    border-radius: var(--r-sm); text-decoration: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sg-nav a:hover { background: #16161b; color: var(--t1); }
+  .sg-nav .grp {
+    font-size: 9px; color: var(--t4); letter-spacing: .8px;
+    padding: 16px 10px 6px; text-transform: uppercase;
+  }
+
+  .sg-main { flex: 1 1 auto; min-width: 0; padding: 28px 40px 96px; max-width: 1120px; }
+
+  .sg-h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; letter-spacing: -.2px; }
+  .sg-sub { font-size: 12px; color: var(--t2); line-height: 1.6; margin: 0 0 4px; max-width: 720px; }
+  .sg-sub b { color: var(--t1); font-weight: 500; }
+
+  .sg-h2 {
+    font-size: 15px; font-weight: 600; color: var(--t1);
+    margin: 44px 0 4px; padding-top: 20px;
+    border-top: 1px solid var(--line2);
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .sg-h2 .n {
+    font-family: var(--mono); font-size: 10px; color: var(--accent); font-weight: 400;
+  }
+  .sg-lead { font-size: 11px; color: var(--t3); margin: 0 0 16px; line-height: 1.6; max-width: 760px; }
+
+  .sg-h3 { font-size: 13px; font-weight: 600; color: var(--t1); margin: 24px 0 8px; }
+  .sg-note { font-size: 10px; color: var(--t3); line-height: 1.6; margin: 6px 0 0; }
+  .sg-note b { color: var(--t2); font-weight: 500; }
+
+  .spec {
+    font-family: var(--mono); font-size: 10px; color: var(--t4);
+    margin: 0 0 12px; line-height: 1.6;
+  }
+  .spec span { color: var(--accent); }
+
+  .sg-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sg-row.top { align-items: flex-start; }
+  .sg-block { display: flex; flex-direction: column; gap: 10px; }
+
+  /* 色卡 */
+  .sw-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; }
+  .sw { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--card); }
+  .sw .chipbox { height: 44px; }
+  .sw .info { padding: 8px 10px; }
+  .sw .tk { font-family: var(--mono); font-size: 10px; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sw .hx { font-family: var(--mono); font-size: 9px; color: var(--t4); }
+  .sw .use { font-size: 9px; color: var(--t3); margin-top: 3px; }
+
+  /* 文字层级样本 */
+  .tx-list { display: flex; flex-direction: column; gap: 8px; }
+  .tx-item { display: flex; align-items: baseline; gap: 12px; }
+  .tx-item .tk { flex: 0 0 96px; font-family: var(--mono); font-size: 10px; color: var(--t4); }
+  .tx-item .sample { flex: 1 1 auto; min-width: 0; }
+
+  /* 字号阶梯 */
+  .fs-row { display: flex; align-items: baseline; gap: 14px; padding: 7px 0; border-bottom: 1px solid var(--line3); }
+  .fs-row .n { flex: 0 0 64px; font-family: var(--mono); font-size: 10px; color: var(--accent); }
+  .fs-row .u { flex: 1 1 auto; font-size: 11px; color: var(--t3); }
+
+  /* 圆角样本 */
+  .rd-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 10px; }
+  .rd { text-align: center; }
+  .rd .box {
+    height: 56px; background: var(--card); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 10px; color: var(--t4);
+  }
+  .rd .cap { font-size: 9px; color: var(--t3); margin-top: 6px; font-family: var(--mono); }
+
+  /* 间距样本 */
+  .sp-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .sp-row .bar { height: 10px; background: var(--accent-deep); border-radius: 2px; }
+  .sp-row .lb { font-family: var(--mono); font-size: 10px; color: var(--t3); flex: 0 0 52px; }
+
+  /* 组件展示底板 */
+  .demo {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--r-xl); padding: 16px;
+  }
+  .demo + .demo { margin-top: 10px; }
+  .demo-label { font-size: 9px; color: var(--t4); letter-spacing: .6px; margin-bottom: 10px; }
+
+  .kpi-row-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+  .node-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+
+  .sg-sidebar-demo {
+    display: flex; height: 300px; border: 1px solid var(--line);
+    border-radius: var(--r-xl); overflow: hidden; background: var(--bg);
+  }
+  .sg-sidebar-demo .sidebar { height: 100%; }
+
+  .modal-demo {
+    width: 440px; background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--r-2xl); box-shadow: var(--shadow-pop); padding: 20px;
+  }
+
+  /* 样本页内芯片保持自然宽度（组件默认 flex:1 是绑卡场景） */
+  .demo .bind-chip { flex: 0 0 auto; }
+
+  .icon-grid { display: grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap: 10px; }
+  .icon-cell {
+    height: 64px; border: 1px solid var(--border); border-radius: var(--r-lg);
+    background: var(--card); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px; color: var(--t2);
+  }
+  .icon-cell span { font-family: var(--mono); font-size: 9px; color: var(--t4); }
+
+  .chart-demo { height: 180px; }
+  .chart-demo svg { width: 100%; height: 100%; }
+
+  .checklist { margin: 0; padding-left: 0; list-style: none; }
+  .checklist li {
+    font-size: 11px; color: var(--t2); padding: 6px 0 6px 20px;
+    border-bottom: 1px solid var(--line3); position: relative;
+  }
+  .checklist li::before {
+    content: ""; position: absolute; left: 2px; top: 12px;
+    width: 8px; height: 8px; border: 1px solid var(--t5); border-radius: 2px;
+  }
+  .checklist li b { color: var(--t1); font-weight: 500; }
+
+  @media (max-width: 1120px) {
+    .sg-nav { display: none; }
+    .sg-main { padding: 24px; }
+    .sw-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  }
+</style>
+</head>
+<body class="sg">
+
+<header class="sg-top">
+  <span class="t">NodeLink 设计系统</span>
+  <span class="v">v1.0</span>
+  <span class="meta">DARK ONLY · 1440×900 · 12px BASE · ONE ACCENT</span>
+</header>
+
+<div class="sg-wrap">
+
+  <nav class="sg-nav">
+    <div class="grp">基础</div>
+    <a href="#s01">01 设计立场</a>
+    <a href="#s02">02 表面层色彩</a>
+    <a href="#s03">03 语义状态色</a>
+    <a href="#s04">04 文字层级</a>
+    <a href="#s05">05 排版阶梯</a>
+    <a href="#s06">06 间距与圆角</a>
+    <div class="grp">控件</div>
+    <a href="#s07">07 按钮</a>
+    <a href="#s08">08 胶囊与分段</a>
+    <a href="#s09">09 输入与搜索</a>
+    <a href="#s10">10 芯片</a>
+    <div class="grp">容器</div>
+    <a href="#s11">11 卡片与 KPI</a>
+    <a href="#s12">12 表格</a>
+    <a href="#s13">13 侧栏导航</a>
+    <a href="#s14">14 弹窗</a>
+    <div class="grp">流程与反馈</div>
+    <a href="#s15">15 步骤条</a>
+    <a href="#s16">16 进度与资源条</a>
+    <a href="#s17">17 空态与骨架</a>
+    <div class="grp">图形</div>
+    <a href="#s18">18 图标</a>
+    <a href="#s19">19 数据图表</a>
+    <a href="#s20">20 交付自检</a>
+  </nav>
+
+  <main class="sg-main">
+
+    <h1 class="sg-h1">NodeLink 前端设计指南</h1>
+    <p class="sg-sub">
+      面向技术运维人员的付费网络节点管控平台。<b>本页就是规范</b>：任何与此页渲染结果不一致的实现都算错误。
+      文字规则见 <b>DESIGN.md</b>，变量见 <b>tokens.css</b>，完整 8 屏参考实现见 <b>app/</b>。
+    </p>
+    <p class="spec">
+      surface <span>--bg / --rail / --panel / --card</span> · accent <span>#5bcfc5</span> ·
+      text <span>--t1…--t7</span> · radius <span>4 / 6 / 8 / 10 / 12 / 16</span> ·
+      control <span>26 / 32 / 42</span> · row <span>60</span>
+    </p>
+
+    <!-- ============ 01 ============ -->
+    <h2 class="sg-h2" id="s01"><span class="n">01</span>设计立场</h2>
+    <p class="sg-lead">
+      用户每天盯 8 小时屏幕，看的是延迟、丢包、流量、密钥。因此三条原则按优先级排序：
+    </p>
+    <div class="kpi-row-3">
+      <div class="card" style="padding:14px;gap:6px">
+        <div style="font-size:13px;font-weight:600">密度优先于呼吸感</div>
+        <div style="font-size:11px;color:var(--t3);line-height:1.6">
+          12px 基准字号、60px 表格行、14px 卡内边距。宁可挤，不要空。
+        </div>
+      </div>
+      <div class="card" style="padding:14px;gap:6px">
+        <div style="font-size:13px;font-weight:600">层级靠明度与描边</div>
+        <div style="font-size:11px;color:var(--t3);line-height:1.6">
+          强调色面积不超过 5%。不用渐变、不用阴影堆叠、不用玻璃拟态。
+        </div>
+      </div>
+      <div class="card" style="padding:14px;gap:6px">
+        <div style="font-size:13px;font-weight:600">状态三重表达</div>
+        <div style="font-size:11px;color:var(--t3);line-height:1.6">
+          颜色 + 文字标签 + 圆点，至少同时出现两种，禁止只靠颜色。
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 02 ============ -->
+    <h2 class="sg-h2" id="s02"><span class="n">02</span>表面层色彩</h2>
+    <p class="sg-lead">所有"该有底色"的容器只从这 5 级里选，不要新建第六级。</p>
+    <div class="sw-grid">
+      <div class="sw">
+        <div class="chipbox" style="background:#0a0a0b"></div>
+        <div class="info"><div class="tk">--bg</div><div class="hx">#0A0A0B</div><div class="use">页面底</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:#0c0c0e"></div>
+        <div class="info"><div class="tk">--rail</div><div class="hx">#0C0C0E</div><div class="use">顶栏 / 侧栏 / 状态栏</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:#101013"></div>
+        <div class="info"><div class="tk">--panel</div><div class="hx">#101013</div><div class="use">表头 / 卡内分区</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:#141417"></div>
+        <div class="info"><div class="tk">--card</div><div class="hx">#141417</div><div class="use">卡片 / 输入框</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:#18181c"></div>
+        <div class="info"><div class="tk">--card-active</div><div class="hx">#18181C</div><div class="use">选中行 / 高亮</div></div>
+      </div>
+    </div>
+
+    <div class="sg-h3">描边三层</div>
+    <div class="sg-row">
+      <div class="card" style="width:150px;height:64px;border-color:var(--border);display:flex;align-items:center;justify-content:center">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--t3)">--border #27272A</span>
+      </div>
+      <div class="card" style="width:150px;height:64px;border-color:var(--border-strong);display:flex;align-items:center;justify-content:center">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--t3)">--border-strong</span>
+      </div>
+      <div class="card" style="width:150px;height:64px;border-color:var(--line);display:flex;align-items:center;justify-content:center">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--t3)">--line 大分割</span>
+      </div>
+      <div class="card" style="width:150px;height:64px;border-color:var(--line2);display:flex;align-items:center;justify-content:center">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--t3)">--line2 表格行</span>
+      </div>
+    </div>
+    <p class="sg-note"><b>hover</b> 时把描边从 <b>--border</b> 提到 <b>--border-strong</b>，底色从 --card 提到 --card-hover，不要加阴影。</p>
+
+    <!-- ============ 03 ============ -->
+    <h2 class="sg-h2" id="s03"><span class="n">03</span>语义状态色</h2>
+    <p class="sg-lead">只用于状态，不用于装饰。每个语义色都是"文字 + 背景 + 描边"三件套配对使用。</p>
+    <div class="sw-grid" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+      <div class="sw">
+        <div class="chipbox" style="background:var(--accent-bg);border-bottom:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;color:var(--accent);font-weight:500">在线</span>
+        </div>
+        <div class="info"><div class="tk">--accent</div><div class="hx">#5BCFC5</div><div class="use">品牌 / 关键正向</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:var(--accent-bg);border-bottom:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;color:var(--green);font-weight:500">成功</span>
+        </div>
+        <div class="info"><div class="tk">--green</div><div class="hx">#34D399</div><div class="use">健康 / 通过</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:var(--amber-bg);border-bottom:1px solid var(--amber-border);display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;color:var(--amber-2);font-weight:500">即将到期</span>
+        </div>
+        <div class="info"><div class="tk">--amber</div><div class="hx">#F59E0B</div><div class="use">警告 / 锁定</div></div>
+      </div>
+      <div class="sw">
+        <div class="chipbox" style="background:var(--rose-bg);border-bottom:1px solid var(--rose-border);display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;color:var(--rose);font-weight:500">已吊销</span>
+        </div>
+        <div class="info"><div class="tk">--rose</div><div class="hx">#F43F5E</div><div class="use">危险 / 失败</div></div>
+      </div>
+    </div>
+    <p class="sg-note">
+      <b>--blue #4F8FEA</b> 仅用于下行流量与中性信息提示，是允许出现的第四种彩色，不要拿来做按钮。
+      琥珀色作为<b>文字</b>时必须用 <b>--amber-2 #F5C56B</b> 提亮一档，否则对比度不足。
+    </p>
+
+    <!-- ============ 04 ============ -->
+    <h2 class="sg-h2" id="s04"><span class="n">04</span>文字层级</h2>
+    <p class="sg-lead">7 级明度。--t3 及更暗只能用于 ≤10px 的辅助标签，正文与关键信息必须 --t2 以上。</p>
+    <div class="demo">
+      <div class="tx-list">
+        <div class="tx-item"><span class="tk">--t1 #FAFAFA</span><span class="sample" style="color:var(--t1);font-size:13px;font-weight:500">HK-01 香港节点 · 标题与关键数值</span></div>
+        <div class="tx-item"><span class="tk">--t2 #A1A1AA</span><span class="sample" style="color:var(--t2);font-size:11px">正文默认色，表格主文本、面板说明</span></div>
+        <div class="tx-item"><span class="tk">--t3 #71717A</span><span class="sample" style="color:var(--t3);font-size:10px">表头、单位、元信息、次要说明</span></div>
+        <div class="tx-item"><span class="tk">--t4 #52525B</span><span class="sample" style="color:var(--t4);font-size:10px">极弱信息、序号、分隔符</span></div>
+        <div class="tx-item"><span class="tk">--t5 #3F3F46</span><span class="sample" style="color:var(--t5);font-size:11px">禁用文字（仅配合 opacity）</span></div>
+        <div class="tx-item"><span class="tk">--t7 #6B6B73</span><span class="sample" style="color:var(--t7);font-size:11px">placeholder</span></div>
+        <div class="tx-item"><span class="tk">--accent</span><span class="sample num" style="color:var(--accent);font-size:11px">28 ms</span></div>
+      </div>
+    </div>
+
+    <!-- ============ 05 ============ -->
+    <h2 class="sg-h2" id="s05"><span class="n">05</span>排版阶梯</h2>
+    <p class="sg-lead">12px 基准，正文字号偏小是刻意的。字重只有 400 / 500 / 600 三档。</p>
+    <div class="demo">
+      <div class="fs-row"><span class="n">26 / 600</span><span style="font-size:26px;font-weight:600;color:var(--t1)">激活你的客户端</span><span class="u">流程页主标题</span></div>
+      <div class="fs-row"><span class="n">22 / 500</span><span class="num" style="font-size:22px;color:var(--t1)">¥102.40</span><span class="u">结果页大数值</span></div>
+      <div class="fs-row"><span class="n">20 / 500</span><span class="num" style="font-size:20px;color:var(--t1)">28</span><span class="u">KPI 数值</span></div>
+      <div class="fs-row"><span class="n">15 / 600</span><span style="font-size:15px;font-weight:600;color:var(--t1)">节点管理</span><span class="u">页面标题</span></div>
+      <div class="fs-row"><span class="n">13 / 600</span><span style="font-size:13px;font-weight:600;color:var(--t1)">云服务器</span><span class="u">区块标题</span></div>
+      <div class="fs-row"><span class="n">12 / 500</span><span style="font-size:12px;color:var(--t2)">监控总览</span><span class="u">侧栏导航</span></div>
+      <div class="fs-row"><span class="n">11 / 400</span><span style="font-size:11px;color:var(--t2)">转发规则已生效，流量将经 HK-01 出口</span><span class="u">正文默认</span></div>
+      <div class="fs-row"><span class="n">10 / 400</span><span style="font-size:10px;color:var(--t3)">延迟 / 丢包 / 今日流量</span><span class="u">表头 · 单位</span></div>
+      <div class="fs-row" style="border-bottom:0"><span class="n">9 / 400</span><span style="font-size:9px;color:var(--t3)">上行 · 下行</span><span class="u">图例 · 角标</span></div>
+    </div>
+
+    <div class="sg-h3">中英混排与数字</div>
+    <div class="demo">
+      <div class="sg-row" style="gap:20px">
+        <div class="sg-block">
+          <span class="spec" style="margin:0">正确 · 等宽 + tabular-nums</span>
+          <span class="num" style="font-size:15px;color:var(--t1)">0.7 / 1 Gbps&nbsp;&nbsp;28 ms&nbsp;&nbsp;0.4%</span>
+          <span class="mono" style="font-size:11px;color:var(--t2)">chrome.exe&nbsp;&nbsp;103.21.244.18:8443</span>
+          <span class="mono" style="font-size:11px;color:var(--accent)">nl_live_9fK3aQ7mX2vB8nR5tW1zY4cD6eH0</span>
+        </div>
+        <div class="sg-block">
+          <span class="spec" style="margin:0">错误 · 中文用等宽 / 数字用比例字体</span>
+          <span class="mono" style="font-size:11px;color:var(--t4);text-decoration:line-through">节点已在线（中文不该用 mono）</span>
+          <span style="font-size:11px;color:var(--t4);text-decoration:line-through">28ms（数字必须等宽且带空格单位）</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 06 ============ -->
+    <h2 class="sg-h2" id="s06"><span class="n">06</span>间距与圆角</h2>
+    <p class="sg-lead">间距走 4px 阶梯。圆角有明确分工，不要混用。</p>
+
+    <div class="sg-h3">间距阶梯</div>
+    <div class="demo">
+      <div class="sp-row"><span class="lb">2</span><div class="bar" style="width:2px"></div><span style="font-size:10px;color:var(--t4)">图标内微调</span></div>
+      <div class="sp-row"><span class="lb">6</span><div class="bar" style="width:6px"></div><span style="font-size:10px;color:var(--t4)">图标与文字</span></div>
+      <div class="sp-row"><span class="lb">8</span><div class="bar" style="width:8px"></div><span style="font-size:10px;color:var(--t4)">同行元素</span></div>
+      <div class="sp-row"><span class="lb">12</span><div class="bar" style="width:12px"></div><span style="font-size:10px;color:var(--t4)">卡间距 / KPI gap</span></div>
+      <div class="sp-row"><span class="lb">14</span><div class="bar" style="width:14px"></div><span style="font-size:10px;color:var(--t4)">区块间距 / 卡内边距</span></div>
+      <div class="sp-row"><span class="lb">20</span><div class="bar" style="width:20px"></div><span style="font-size:10px;color:var(--t4)">面板内边距</span></div>
+      <div class="sp-row"><span class="lb">24</span><div class="bar" style="width:24px"></div><span style="font-size:10px;color:var(--t4)">主内容区 padding</span></div>
+      <div class="sp-row"><span class="lb">40</span><div class="bar" style="width:40px"></div><span style="font-size:10px;color:var(--t4)">流程页大区块</span></div>
+    </div>
+
+    <div class="sg-h3">圆角分工</div>
+    <div class="rd-grid">
+      <div class="rd"><div class="box" style="border-radius:4px">4</div><div class="cap">--r-xs</div><div class="cap" style="color:var(--t4)">小 chip</div></div>
+      <div class="rd"><div class="box" style="border-radius:6px">6</div><div class="cap">--r-sm</div><div class="cap" style="color:var(--t4)">按钮 / pill</div></div>
+      <div class="rd"><div class="box" style="border-radius:8px">8</div><div class="cap">--r-md</div><div class="cap" style="color:var(--t4)">输入框</div></div>
+      <div class="rd"><div class="box" style="border-radius:10px">10</div><div class="cap">--r-lg</div><div class="cap" style="color:var(--t4)">KPI / 小卡</div></div>
+      <div class="rd"><div class="box" style="border-radius:12px">12</div><div class="cap">--r-xl</div><div class="cap" style="color:var(--t4)">标准卡片</div></div>
+      <div class="rd"><div class="box" style="border-radius:16px">16</div><div class="cap">--r-2xl</div><div class="cap" style="color:var(--t4)">弹窗 / 大面板</div></div>
+    </div>
+
+    <!-- ============ 07 ============ -->
+    <h2 class="sg-h2" id="s07"><span class="n">07</span>按钮</h2>
+    <p class="spec">height <span>32</span> · padding <span>0 12</span> · radius <span>6</span> · font <span>11 / 500</span> · gap <span>6</span></p>
+    <div class="demo">
+      <div class="sg-row">
+        <button class="btn primary">支付 ¥102.40 并生成密钥</button>
+        <button class="btn line">查看详情</button>
+        <button class="btn ghost">重启节点</button>
+        <button class="btn danger">吊销密钥</button>
+        <button class="btn solid-dark">下载配置</button>
+        <button class="btn link" style="height:auto;padding:0">文字按钮</button>
+      </div>
+      <div class="sg-row" style="margin-top:12px">
+        <button class="btn line">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          复制密钥
+        </button>
+        <button class="btn primary" disabled>已禁用</button>
+        <button class="btn line" style="height:42px;font-size:12px">大号次按钮 42</button>
+        <button class="btn primary" style="height:42px;font-size:12px">验证并激活</button>
+      </div>
+    </div>
+    <p class="sg-note">
+      <b>primary 每屏最多一个</b>。按钮文案是动词短语，禁止"确定 / 提交 / 下一步"（步骤导航除外）。
+      禁用态只降 <b>opacity .45</b>，不要改色。
+    </p>
+
+    <!-- ============ 08 ============ -->
+    <h2 class="sg-h2" id="s08"><span class="n">08</span>胶囊、圆点与分段控件</h2>
+    <p class="spec">pill <span>h26 · r6 · 11/500</span> · seg <span>h20 mini / h26 bordered</span></p>
+
+    <div class="demo">
+      <div class="demo-label">STATUS PILL — 颜色 + 圆点 + 文字三重表达</div>
+      <div class="sg-row">
+        <span class="status-pill"><i class="dot green"></i>在线</span>
+        <span class="status-pill" style="background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber-2)"><i class="dot amber"></i>即将到期</span>
+        <span class="status-pill" style="background:var(--rose-bg);border-color:var(--rose-border);color:var(--rose)"><i class="dot grey"></i>已吊销</span>
+        <span class="status-pill" style="background:#1a1a1e;border-color:var(--border);color:var(--t2)"><i class="dot" style="background:var(--t4)"></i>离线</span>
+      </div>
+    </div>
+
+    <div class="demo">
+      <div class="demo-label">SEGMENTED — 选中态用 #2A2A30 + --t1，不用强调色</div>
+      <div class="sg-row">
+        <div class="seg">
+          <button class="on">1h</button><button>6h</button><button>24h</button><button>7d</button>
+        </div>
+        <div class="seg bordered">
+          <button class="on">全部</button><button>云服务器</button><button>自建机房</button>
+        </div>
+        <div class="seg bordered sm">
+          <button class="on">月付</button><button>年付 -20%</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 09 ============ -->
+    <h2 class="sg-h2" id="s09"><span class="n">09</span>输入与搜索</h2>
+    <p class="spec">h <span>32</span> · radius <span>8</span> · bg <span>--card</span> · border <span>--border</span> · font <span>11</span> · focus <span>--border-strong</span></p>
+    <div class="demo">
+      <div class="sg-row top">
+        <div class="search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input placeholder="搜索节点、IP 或客户端" />
+          <span class="kbd">Ctrl K</span>
+        </div>
+        <div class="input-box" style="width:220px">
+          <span style="font-size:10px;color:var(--t3)">规则名称</span>
+          <input value="Chrome 走香港" />
+        </div>
+        <button class="btn ghost">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建
+        </button>
+      </div>
+
+      <div class="demo-label" style="margin-top:14px">大密钥输入 —— 42px / 等宽 / 已输入内容用强调色</div>
+      <div style="display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border:1px solid var(--accent-border);border-radius:var(--r-lg);background:var(--card)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M17.5 17.5l2-2M20 20l2-2"/></svg>
+        <span class="mono" style="font-size:12px;color:var(--accent);letter-spacing:.2px">nl_live_9fK3aQ7mX2vB8nR5tW1zY4cD6eH0</span>
+        <span class="spacer"></span>
+        <button class="btn line" style="height:26px;font-size:10px">粘贴</button>
+      </div>
+    </div>
+
+    <!-- ============ 10 ============ -->
+    <h2 class="sg-h2" id="s10"><span class="n">10</span>芯片</h2>
+    <p class="spec">h <span>28</span> · padding <span>0 10</span> · radius <span>8</span> · font <span>11</span></p>
+    <div class="demo">
+      <div class="sg-row">
+        <span class="bind-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>
+          HK-01 香港
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </span>
+        <span class="bind-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>
+          SG-01 新加坡
+        </span>
+        <span class="bind-chip" style="border-color:var(--amber-border);color:var(--amber-2);background:var(--amber-bg)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          LAX-01 团队版专属
+        </span>
+      </div>
+      <p class="sg-note">锁定态用琥珀描边 + 锁图标，且不可点击；可移除芯片右侧 × 在 hover 时转 <b>--rose</b>。</p>
+    </div>
+
+    <!-- ============ 11 ============ -->
+    <h2 class="sg-h2" id="s11"><span class="n">11</span>卡片与 KPI</h2>
+    <p class="spec">card <span>r12 · 1px --border · padding 14</span> · kpi <span>h76 · r10 · 4列 gap12</span> · node-card <span>r10 · padding 12</span></p>
+
+    <div class="sg-h3">KPI 四列</div>
+    <div class="kpi-row" style="margin-bottom:12px">
+      <div class="kpi">
+        <span class="k">平均延迟</span>
+        <div class="vrow"><span class="v">28</span><span class="u">ms</span></div>
+        <span class="d up">-4.2% 较昨日</span>
+      </div>
+      <div class="kpi">
+        <span class="k">丢包率</span>
+        <div class="vrow"><span class="v">0.4</span><span class="u">%</span></div>
+        <span class="d">持平</span>
+      </div>
+      <div class="kpi">
+        <span class="k">今日流量</span>
+        <div class="vrow"><span class="v">12.6</span><span class="u">GB</span></div>
+        <span class="d up">+1.8 GB</span>
+      </div>
+      <div class="kpi">
+        <span class="k">在线客户端</span>
+        <div class="vrow"><span class="v accent">37</span><span class="u">台</span></div>
+        <span class="d">共 42 台</span>
+      </div>
+    </div>
+
+    <div class="sg-h3">节点卡</div>
+    <div class="demo" style="background:var(--bg)">
+      <div class="node-grid-2">
+        <button class="node-card" style="border-color:var(--accent-border);background:var(--accent-bg3)">
+          <div class="row">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>
+            <span class="name">HK-01 香港</span>
+            <span class="spacer"></span>
+            <span class="lat accent">28 ms</span>
+          </div>
+          <div class="meta">103.21.244.18 · cn-hk</div>
+          <div class="stats">
+            <span>上行 <b class="mono">0.4</b></span>
+            <span>下行 <b class="mono">1.2</b></span>
+            <span>负载 <b class="mono">38%</b></span>
+          </div>
+        </button>
+        <button class="node-card">
+          <div class="row">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>
+            <span class="name">SHA-02 上海</span>
+            <span class="spacer"></span>
+            <span class="lat">12 ms</span>
+          </div>
+          <div class="meta">192.168.30.11 · cn-east</div>
+          <div class="stats">
+            <span>上行 <b class="mono">0.7</b></span>
+            <span>下行 <b class="mono">0.9</b></span>
+            <span>负载 <b class="mono">71%</b></span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- ============ 12 ============ -->
+    <h2 class="sg-h2" id="s12"><span class="n">12</span>表格</h2>
+    <p class="spec">容器 <span>r12 · --card · overflow hidden</span> · 表头 <span>h40 · --panel · 10/--t3</span> · 行 <span>h60 · 1px --line2 上边</span> · cell <span>padding 0 14</span></p>
+    <div class="table">
+      <div class="t-head">
+        <div class="cell" style="flex:0 0 200px">进程 / 规则</div>
+        <div class="cell" style="flex:1">目标服务器</div>
+        <div class="cell" style="flex:0 0 120px">转发方式</div>
+        <div class="cell" style="flex:0 0 110px">今日流量</div>
+        <div class="cell" style="flex:0 0 100px">状态</div>
+      </div>
+      <div class="t-row">
+        <div class="cell" style="flex:0 0 200px">
+          <span class="proc-dot" style="background:var(--accent)"></span>
+          <span class="mono" style="font-size:11px;color:var(--t1)">chrome.exe</span>
+        </div>
+        <div class="cell" style="flex:1">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:11px;color:var(--t2)">HK-01 香港</span>
+            <span class="mono" style="font-size:10px;color:var(--t3)">103.21.244.18:8443</span>
+          </div>
+        </div>
+        <div class="cell" style="flex:0 0 120px"><span style="font-size:11px;color:var(--t3)">全局代理</span></div>
+        <div class="cell" style="flex:0 0 110px"><span class="num" style="font-size:11px;color:var(--t2)">4.2 GB</span></div>
+        <div class="cell" style="flex:0 0 100px"><span class="status-pill"><i class="dot green"></i>在线</span></div>
+      </div>
+      <div class="t-row hl">
+        <div class="cell" style="flex:0 0 200px">
+          <span class="proc-dot" style="background:var(--blue)"></span>
+          <span class="mono" style="font-size:11px;color:var(--t1)">steam.exe</span>
+        </div>
+        <div class="cell" style="flex:1">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:11px;color:var(--t2)">SG-01 新加坡</span>
+            <span class="mono" style="font-size:10px;color:var(--t3)">128.199.72.6:8443</span>
+          </div>
+        </div>
+        <div class="cell" style="flex:0 0 120px"><span style="font-size:11px;color:var(--t3)">按域名</span></div>
+        <div class="cell" style="flex:0 0 110px"><span class="num" style="font-size:11px;color:var(--t2)">1.7 GB</span></div>
+        <div class="cell" style="flex:0 0 100px"><span class="status-pill" style="background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber-2)"><i class="dot amber"></i>警告</span></div>
+      </div>
+      <div class="group-row" style="height:36px;display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--panel);font-size:10px;color:var(--t3)">
+        <span style="width:3px;height:12px;background:var(--accent);border-radius:2px"></span>
+        自建机房 · 3 台
+      </div>
+      <div class="t-row">
+        <div class="cell" style="flex:0 0 200px">
+          <span class="proc-dot" style="background:var(--t4)"></span>
+          <span class="mono" style="font-size:11px;color:var(--t4)">git.exe</span>
+        </div>
+        <div class="cell" style="flex:1"><span style="font-size:11px;color:var(--t3)">未分配目标</span></div>
+        <div class="cell" style="flex:0 0 120px"><span style="font-size:11px;color:var(--t4)">—</span></div>
+        <div class="cell" style="flex:0 0 110px"><span class="num" style="font-size:11px;color:var(--t4)">0 B</span></div>
+        <div class="cell" style="flex:0 0 100px"><span class="status-pill" style="background:#1a1a1e;border-color:var(--border);color:var(--t3)"><i class="dot" style="background:var(--t4)"></i>已停用</span></div>
+      </div>
+    </div>
+    <p class="sg-note">
+      行内双行结构：主文本 11px <b>--t2</b> + 次文本 10px mono <b>--t3</b>。分组行 36px、<b>--panel</b> 底、左侧 3px 强调竖条。
+      表格下方留白不要超过 40px，有空间就补分页条或信息卡。
+    </p>
+
+    <!-- ============ 13 ============ -->
+    <h2 class="sg-h2" id="s13"><span class="n">13</span>侧栏导航</h2>
+    <p class="spec">sidebar <span>w240 · --rail · padding 12</span> · 项 <span>h32 · r6 · 12/--t2</span> · 选中 <span>--accent-bg + --accent</span></p>
+    <div class="sg-sidebar-demo">
+      <aside class="sidebar">
+        <div class="card" style="padding:10px;gap:6px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:20px;height:20px;border-radius:6px;background:var(--accent-bg);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center">
+              <span style="font-size:9px;color:var(--accent);font-weight:600">N</span>
+            </div>
+            <span style="font-size:11px;color:var(--t1);font-weight:500">生产环境</span>
+            <span class="spacer"></span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" stroke-width="1.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <span class="mono" style="font-size:9px;color:var(--t4)">workspace · 42 客户端</span>
+        </div>
+
+        <div class="section-label" style="font-size:9px;color:var(--t4);letter-spacing:.8px;padding:0 10px 6px">运营</div>
+        <button class="snav on" style="width:100%;text-align:left">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+          监控总览
+        </button>
+        <button class="snav" style="width:100%;text-align:left">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>
+          节点管理
+        </button>
+        <button class="snav" style="width:100%;text-align:left">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9"/></svg>
+          密钥管理
+        </button>
+
+        <div class="section-label" style="font-size:9px;color:var(--t4);letter-spacing:.8px;padding:16px 10px 6px">系统</div>
+        <button class="snav" style="width:100%;text-align:left">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          审计日志
+        </button>
+        <span class="spacer"></span>
+      </aside>
+      <div style="flex:1 1 auto;padding:20px;display:flex;flex-direction:column;gap:10px">
+        <span class="spec" style="margin:0">默认 --t2 / hover 底 #16161B + --t1 / 选中 --accent-bg + --accent</span>
+        <span class="spec" style="margin:0">工作区切换卡永远在导航上方第一块</span>
+        <span class="spec" style="margin:0">分组标题 9px / --t4 / letter-spacing .8px / 上边距 16px</span>
+      </div>
+    </div>
+
+    <!-- ============ 14 ============ -->
+    <h2 class="sg-h2" id="s14"><span class="n">14</span>弹窗</h2>
+    <p class="spec">遮罩 <span>rgba(0,0,0,.62) + blur 2px</span> · 面板 <span>420–560 宽 · r16 · --card · --shadow-pop</span></p>
+    <div class="demo" style="background:#0a0a0b;display:flex;justify-content:center;padding:24px">
+      <div class="modal-demo">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--rose)" stroke-width="1.5" stroke-linecap="round"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+          <span style="font-size:15px;font-weight:600">确认吊销这把密钥？</span>
+        </div>
+        <p style="font-size:11px;color:var(--t2);line-height:1.6;margin:0 0 18px">
+          吊销后立即失效，已绑定的 3 台设备会掉线，且无法恢复。历史账单不受影响。
+        </p>
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button class="btn line">取消</button>
+          <button class="btn danger">确认吊销</button>
+        </div>
+      </div>
+    </div>
+    <p class="sg-note">标题说后果，正文说清不可逆影响，按钮写动词。危险按钮在右、取消在左。</p>
+
+    <!-- ============ 15 ============ -->
+    <h2 class="sg-h2" id="s15"><span class="n">15</span>步骤条</h2>
+    <p class="spec">节点 <span>26px 圆</span> · 标签 <span>10px</span> · 连接线 <span>1px</span></p>
+    <div class="demo">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="step done"><span class="circle" style="background:var(--accent);color:var(--accent-ink);border-color:var(--accent)">1</span><span class="lbl" style="color:var(--t2)">选择套餐</span></div>
+        <div class="step-line done" style="flex:0 0 40px;height:1px;background:var(--accent-deep)"></div>
+        <div class="step on"><span class="circle" style="border-color:var(--accent);color:var(--accent)">2</span><span class="lbl" style="color:var(--t1);font-weight:500">分配节点</span></div>
+        <div class="step-line" style="flex:0 0 40px;height:1px;background:var(--line3)"></div>
+        <div class="step"><span class="circle" style="border-color:var(--t5);color:var(--t4)">3</span><span class="lbl" style="color:var(--t3)">支付</span></div>
+        <div class="step-line" style="flex:0 0 40px;height:1px;background:var(--line3)"></div>
+        <div class="step"><span class="circle" style="border-color:var(--t5);color:var(--t4)">4</span><span class="lbl" style="color:var(--t3)">获取密钥</span></div>
+      </div>
+    </div>
+
+    <!-- ============ 16 ============ -->
+    <h2 class="sg-h2" id="s16"><span class="n">16</span>进度与资源条</h2>
+    <p class="spec">轨道 <span>h6 · r3 · #1F1F23</span> · 填充 <span>&lt;70% accent / 70–85% amber / &gt;85% rose</span></p>
+    <div class="demo" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="flex:0 0 56px;font-size:10px;color:var(--t3)">CPU</span>
+        <div style="flex:1 1 auto;height:6px;border-radius:3px;background:#1f1f23;overflow:hidden">
+          <div style="width:38%;height:100%;background:var(--accent);border-radius:3px"></div>
+        </div>
+        <span class="num" style="flex:0 0 44px;text-align:right;font-size:10px;color:var(--t3)">38%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="flex:0 0 56px;font-size:10px;color:var(--t3)">内存</span>
+        <div style="flex:1 1 auto;height:6px;border-radius:3px;background:#1f1f23;overflow:hidden">
+          <div style="width:78%;height:100%;background:var(--amber);border-radius:3px"></div>
+        </div>
+        <span class="num" style="flex:0 0 44px;text-align:right;font-size:10px;color:var(--t3)">78%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="flex:0 0 56px;font-size:10px;color:var(--t3)">磁盘</span>
+        <div style="flex:1 1 auto;height:6px;border-radius:3px;background:#1f1f23;overflow:hidden">
+          <div style="width:91%;height:100%;background:var(--rose);border-radius:3px"></div>
+        </div>
+        <span class="num" style="flex:0 0 44px;text-align:right;font-size:10px;color:var(--t3)">91%</span>
+      </div>
+    </div>
+
+    <!-- ============ 17 ============ -->
+    <h2 class="sg-h2" id="s17"><span class="n">17</span>空态与骨架</h2>
+    <p class="sg-lead">空态不画插画：一行说明 + 一个次级按钮，垂直居中。加载用骨架呼吸，不用 spinner。</p>
+    <div class="sg-row top" style="align-items:stretch">
+      <div class="demo" style="flex:1 1 0;min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--t5)" stroke-width="1.5"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>
+        <span style="font-size:11px;color:var(--t3)">还没有转发规则，新建一条把指定进程的流量指向节点。</span>
+        <button class="btn line" style="height:26px;font-size:10px">新建转发规则</button>
+      </div>
+      <div class="demo" style="flex:1 1 0;display:flex;flex-direction:column;gap:10px">
+        <div style="height:10px;width:38%;border-radius:6px;background:var(--line2)"></div>
+        <div style="height:10px;width:72%;border-radius:6px;background:var(--line2);opacity:.7"></div>
+        <div style="height:10px;width:56%;border-radius:6px;background:var(--line2);opacity:.5"></div>
+        <div style="height:10px;width:80%;border-radius:6px;background:var(--line2);opacity:.35"></div>
+      </div>
+    </div>
+
+    <!-- ============ 18 ============ -->
+    <h2 class="sg-h2" id="s18"><span class="n">18</span>图标</h2>
+    <p class="sg-lead">全部 inline SVG，不引图标库。描边 1.5，颜色跟随 currentColor，导航 15px、按钮内 14px、表内 12px。</p>
+    <div class="icon-grid">
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>overview</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span>rules</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg><span>nodes</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M17.5 17.5l2-2M20 20l2-2"/></svg><span>key</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>settings</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>search</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>copy</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></svg><span>download</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 9v4M12 16h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span>warning</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg><span>check</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span>shield</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg><span>close</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg><span>chevron</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>plus</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 12h13M12 7l5 5-5 5M20 4v16"/></svg><span>logout</span></div>
+      <div class="icon-cell"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg><span>refresh</span></div>
+    </div>
+
+    <!-- ============ 19 ============ -->
+    <h2 class="sg-h2" id="s19"><span class="n">19</span>数据图表</h2>
+    <p class="sg-lead">只画横向网格线，不画外框与 Y 轴竖线。主序列强调色 2px，次序列 --t4，面积渐变到透明。</p>
+    <div class="card" style="padding:14px;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;height:24px">
+        <span style="font-size:11px;color:var(--t2)">吞吐（Mbps）</span>
+        <span class="spacer"></span>
+        <span class="legend"><i style="background:var(--accent)"></i>上行</span>
+        <span class="legend"><i style="background:var(--t4)"></i>下行</span>
+        <div class="seg"><button class="on">1h</button><button>6h</button><button>24h</button></div>
+      </div>
+      <div class="chart-demo">
+        <svg viewBox="0 0 800 180" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#5bcfc5" stop-opacity="0.18"/>
+              <stop offset="100%" stop-color="#5bcfc5" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <!-- 网格线：仅横向 -->
+          <line x1="0" y1="40" x2="800" y2="40" stroke="#1f1f23" stroke-width="1"/>
+          <line x1="0" y1="90" x2="800" y2="90" stroke="#1f1f23" stroke-width="1"/>
+          <line x1="0" y1="140" x2="800" y2="140" stroke="#1f1f23" stroke-width="1"/>
+          <!-- 参考线 -->
+          <line x1="0" y1="70" x2="800" y2="70" stroke="#2b7a7a" stroke-width="1" stroke-dasharray="3 3"/>
+          <!-- 面积 -->
+          <path d="M0 120 C60 96 100 138 160 110 C220 82 260 128 320 100 C380 72 420 116 480 88 C540 60 580 104 640 78 C700 52 760 92 800 66 L800 180 L0 180 Z" fill="url(#g1)"/>
+          <!-- 主序列 -->
+          <path d="M0 120 C60 96 100 138 160 110 C220 82 260 128 320 100 C380 72 420 116 480 88 C540 60 580 104 640 78 C700 52 760 92 800 66" fill="none" stroke="#5bcfc5" stroke-width="2" stroke-linecap="round"/>
+          <!-- 次序列 -->
+          <path d="M0 148 C60 140 100 156 160 142 C220 128 260 150 320 136 C380 122 420 146 480 130 C540 114 580 140 640 124 C700 108 760 132 800 118" fill="none" stroke="#52525b" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--t4)">
+        <span>18:00</span><span>18:15</span><span>18:30</span><span>18:45</span><span>19:00</span>
+      </div>
+    </div>
+
+    <!-- ============ 20 ============ -->
+    <h2 class="sg-h2" id="s20"><span class="n">20</span>交付自检</h2>
+    <p class="sg-lead">生成页面后逐条核对，全通过才交付。完整版见 DESIGN.md 第 13 节。</p>
+    <div class="sg-row top" style="align-items:flex-start;gap:24px">
+      <div style="flex:1 1 0;min-width:0">
+        <div class="sg-h3" style="margin-top:0">视觉</div>
+        <ul class="checklist">
+          <li>全文没有裸色值，全部来自 tokens</li>
+          <li>强调色面积 &lt; 5%，只在主按钮 / 选中 / 关键数值</li>
+          <li>正文 11px，标题 13px，页面标题 15px</li>
+          <li>数字、IP、密钥、进程名用等宽 + tabular-nums</li>
+          <li>按钮只有 26 / 32 / 42 三档高度</li>
+          <li>卡片圆角 12px，KPI 卡 10px</li>
+          <li>表格行 60px，表头 40px</li>
+        </ul>
+      </div>
+      <div style="flex:1 1 0;min-width:0">
+        <div class="sg-h3" style="margin-top:0">结构与行为</div>
+        <ul class="checklist">
+          <li>用的是三种外壳之一，没有自创骨架</li>
+          <li>主区有 min-width: 0，1440 宽下无横向滚动</li>
+          <li>每屏只有一个主按钮</li>
+          <li>hover / focus / disabled / loading 四态都有</li>
+          <li>动效只过渡颜色与描边，≤150ms</li>
+          <li>危险操作有二次确认弹窗</li>
+          <li>按钮文案都是动词短语</li>
+        </ul>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

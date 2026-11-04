@@ -7,6 +7,12 @@
 
 > **产品边界（重要）**：v1.4 增加了容量感知的 PID 自动分配，v1.3 在 Windows Client 进程发现基础上加入每机独立 PID 配额（默认 8，可设 1～128）和客户端二次校验；v1.2 新增 Windows Client 进程发现、按 PID+启动时间绑定策略，以及可选 ProxyBridge 进程名规则执行。除新增加的未实机验证的实验性 TCP 引擎外，它**尚不具备**生产可用的同名 `Client.exe` 不同 PID 全协议安全隔离能力，也不保证突破任何游戏的多开规则。默认客户端模式仅观察；ProxyBridge 只按**进程名**执行规则，并会拒绝发现的冲突配置。策略绑定与已启动代理引擎不等于实际出口已验证。
 
+## NodeLink-inspired unified dark design (v1.8.0)
+
+The Controller and Windows Desktop adopt the user-provided NodeLink visual rules. Controller keeps its operational REST API and uses a 240px text sidebar; native Wails Desktop uses a 76px icon rail and does not open a local Web management port. The Linux/Windows Cloud Agent is intentionally headless and appears in the Controller fleet and detail views.
+
+The authoritative references, shared CSS tokens, and offline validation steps are in [UI Design System](docs/DESIGN_SYSTEM.md). Visual styling only: existing per-PID TCP experimental mode remains experimental, and the redesign does not provide UDP/DNS proxy guarantees.
+
 ## Git 源码仓库与构建
 
 本仓库仅追踪源码、测试、部署脚本及文档；`node-console-linux-*`、`node-console-windows-*.exe` 等二进制属于构建产物，已由 `.gitignore` 排除。下载发行包与从 Git 克隆源码不同：克隆后需要自行构建。
@@ -47,7 +53,7 @@ Windows PowerShell 下可直接运行 `go test ./...`，然后执行 `go build -
 
 ## 界面预览
 
-- 现代运维控制台：暗色固定侧边栏、浅色数据内容区、紧凑可筛选表格、抽屉式 Agent 配置。
+- Modern operations interface: dark-only surface tokens, compact tables, status pills, shared controls, and a 240px text sidebar.
 - 云端 Agent：节点在线/离线、心跳、资源使用、实际运行状态、配置修订版本、远程操作日志。
 - 节点池：托管和手工代理统一显示，可独立进行 TCP 检测。
 

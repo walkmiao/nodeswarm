@@ -51,7 +51,7 @@ def main():
             code,node=request(base,"/api/nodes","POST",admin,{"name":"Tokyo VPS 01","host":"203.0.113.23","port":11080,"username":"demo","password":"private-pw","capacity":3,"enabled":True,"region":"Tokyo","provider":"Cloud"})
             assert code==201,(code,node)
             html=(ROOT/"web/index.html").read_text().replace('<link rel="stylesheet" href="/style.css" />','').replace('<script defer src="/app.js"></script>','')
-            css=(ROOT/"web/style.css").read_text();js=(ROOT/"web/app.js").read_text()
+            css='\n'.join([(ROOT/'web/design-system/tokens.css').read_text(),(ROOT/'web/design-system/components.css').read_text(),(ROOT/'web/style.css').read_text()]);css=__import__('re').sub(r'@import url\([^)]*\);','',css);js=(ROOT/"web/app.js").read_text()
             def backend(path,opts):
                 headers=opts.get('headers') or {};method=opts.get('method','GET');b=opts.get('body')
                 r=urllib.request.Request(base+path,method=method,data=b.encode() if b else None,headers=headers)

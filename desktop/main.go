@@ -30,7 +30,7 @@ func (a *App) Assign(pid int, startTime, nodeID string) error {
 }
 func (a *App) Unassign(pid int, startTime string) error { return a.core.Unassign(pid, startTime) }
 func (a *App) AutoFill() (int, error)                   { return a.core.AutoFill() }
-func (a *App) ClearLogs()                              { a.core.ClearLogs() }
+func (a *App) ClearLogs()                               { a.core.ClearLogs() }
 
 // No method exposes the device token, enrollment key or SOCKS5 passwords.
 
@@ -52,7 +52,7 @@ func main() {
 	err = wails.Run(&options.App{
 		Title: "NodeSwarm Desktop",
 		Width: 1280, Height: 820, MinWidth: 1080, MinHeight: 680,
-		BackgroundColour: &options.RGBA{R: 246, G: 248, B: 250, A: 255},
+		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 11, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup: func(ctx context.Context) {
 			state := core.GetState()

@@ -1,3 +1,12 @@
+## v1.8.0 - 2026-11-04: Unified NodeLink UI
+
+- Apply the supplied DESIGN.md/tokens.css/styleguide.html contract as a shared dark-only design system.
+- Rebuild Controller frontend with a 240px textual navigation shell, compact operation tables, fleet/resource summaries, modal confirmations, and a unified Agent detail panel.
+- Rebuild the native Wails Windows Desktop frontend with a 76px icon rail, 44px header, process-rule table, quotas, node status, logs, and settings; preserve the Go API bindings.
+- Keep cloud agents headless, with their fleet, health, and management rendered in Controller.
+- Add design system synchronization, static UI audit and browser snapshot checks to development and CI.
+- No proxy protocol changes. PID TCP is still experimental; UDP/DNS leakage isolation and Windows real-host egress remain unverified.
+
 ## v1.7.0 — opt-in experimental per-PID TCP SOCKS5 redirection
 
 - Add Windows x64-only `internal/pidtcp` engine: PID + process creation time validation, separate same-name PID -> SOCKS5 routes, bounded initial SYN attribution, TCP NAT relay, IPv4/IPv6 packet parsing, SOCKS5 CONNECT with credentials, and no fallback after captured proxy CONNECT failure.

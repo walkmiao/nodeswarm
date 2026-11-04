@@ -11,7 +11,7 @@ URL=os.environ.get('NODE_CONSOLE_TEST_URL','http://127.0.0.1:18088')
 TOKEN_FILE=os.environ.get('NODE_CONSOLE_TEST_TOKEN_FILE','/tmp/nodeconsole-qa-controller/admin.token')
 TOKEN=Path(TOKEN_FILE).read_text().strip()
 html=(ROOT/'web/index.html').read_text().replace('<link rel="stylesheet" href="/style.css" />','').replace('<script defer src="/app.js"></script>','')
-css=(ROOT/'web/style.css').read_text();js=(ROOT/'web/app.js').read_text()
+css='\n'.join([(ROOT/'web/design-system/tokens.css').read_text(),(ROOT/'web/design-system/components.css').read_text(),(ROOT/'web/style.css').read_text()]);css=__import__('re').sub(r'@import url\([^)]*\);','',css);js=(ROOT/'web/app.js').read_text()
 def backend(path,options):
     headers=options.get('headers') or {};body=options.get('body');req=urllib.request.Request(URL+path,data=body.encode() if body else None,headers=headers,method=options.get('method','GET'))
     try:
@@ -52,8 +52,8 @@ with sync_playwright() as p:
     page.locator('[data-action="save-node"]').click()
     qa=page.locator('tbody tr').filter(has_text=testname)
     qa.get_by_text('Test region').wait_for(timeout=10000)
-    page.on('dialog',lambda d:d.accept())
     qa.locator('[data-action="delete-node"]').click()
+    page.locator('[data-danger-confirm] [data-confirm-proceed]').click()
     qa.wait_for(state='detached',timeout=10000)
     page.locator('[data-page="settings"]').first.click()
     assert page.locator('.codebox').count()>=3
@@ -68,6 +68,7 @@ with sync_playwright() as p:
     page.locator('[data-action="close-overlay"]').last.click()
     page.get_by_text('Playwright-Bootstrap').wait_for()
     page.locator('[data-action="revoke-grant"]').click()
+    page.locator('[data-danger-confirm] [data-confirm-proceed]').click()
     page.get_by_text('Playwright-Bootstrap').wait_for(state='detached')
     page.locator('[data-page="alerts"]').first.click()
     page.get_by_text('实时告警列表').wait_for()

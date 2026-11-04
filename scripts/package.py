@@ -6,7 +6,7 @@ import zipfile
 import sys
 
 root = Path(__file__).resolve().parents[1]
-version = 'v1.5.0'
+version = 'v1.8.0'
 target = root.parent / f'nodeswarm-{version}-release.zip'
 binaries = (
     'node-console-linux-amd64',
@@ -19,7 +19,7 @@ for name in binaries:
         sys.exit(f'Missing build artifact: {name}; run make all')
 
 files = ['README.md', 'Makefile', 'go.mod', 'Dockerfile', '.dockerignore', '.gitignore', '.gitattributes', 'main.go', 'main_test.go', 'api_agents.go', 'api_agents_test.go', 'api_clients.go', 'api_clients_test.go', 'api_client_device.go', 'api_client_device_test.go', 'probe_batch_test.go']
-include = ('internal', 'web', 'deploy', 'docs', 'scripts', '.github', 'desktop')
+include = ('design-system', 'internal', 'web', 'deploy', 'docs', 'scripts', '.github', 'desktop')
 exclude = {'__pycache__', 'node_modules', '.git', 'agent.env', 'data', 'runtime', 'logs', 'bin', 'wailsjs'}
 for folder in include:
     for candidate in (root / folder).rglob('*'):
