@@ -266,11 +266,14 @@ func (d *daemon) heartbeat(ctx context.Context) error {
 		err := d.service.Apply(desired.Revision, desired.Proxy)
 		if err != nil {
 			d.note("error", "Proxy configuration failed: "+err.Error())
-			return nil
+		} else {
+			cur := d.service.Snapshot()
+			d.note("info", fmt.Sprintf("Proxy desired revision %d applied: %s", desired.Revision, cur.Status))
 		}
 		cur := d.service.Snapshot()
-		d.note("info", fmt.Sprintf("Proxy desired revision %d applied: %s", desired.Revision, cur.Status))
-		// Acknowledge immediately instead of waiting another heartbeat interval.
+		// Always acknowledge the ACTUAL revision and error, including when a
+		// rejected update left the previous SOCKS5 listener running. Otherwise
+		// Controller would show stale healthy status until the next heartbeat.
 		updated := hb
 		updated.Runtime = cur
 		updated.Logs = d.recentLogs()

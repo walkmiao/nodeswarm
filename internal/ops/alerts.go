@@ -49,6 +49,11 @@ func Evaluate(agents []control.AgentView, nodes []manager.Node, now time.Time) [
 		}
 		if a.Runtime.Status == "error" {
 			out = append(out, Alert{base + "proxy-error", "critical", "agent", "SOCKS5 服务运行异常", a.Runtime.Error, a.ID, a.Name, ""})
+		} else if a.Desired.Enabled && a.Runtime.Error != "" && a.Runtime.Revision != a.Revision {
+			// Rollback keeps the old listener healthy but the requested change
+			// failed. Surface this immediately instead of waiting for drift TTL.
+			out = append(out, Alert{base + "config-rejected", "warning", "agent", "代理新配置未生效，旧版本仍在运行",
+				fmt.Sprintf("期望修订 %d，实际修订 %d；%s", a.Revision, a.Runtime.Revision, a.Runtime.Error), a.ID, a.Name, ""})
 		} else if a.Desired.Enabled {
 			since, err := time.Parse(time.RFC3339, a.DesiredAt)
 			if err == nil && now.Sub(since) > 30*time.Second && (a.Runtime.Status != "running" || a.Runtime.Revision != a.Revision) {

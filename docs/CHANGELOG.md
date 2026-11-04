@@ -1,3 +1,10 @@
+## Post-v1.8 maintenance — 2026-11-04
+
+- Cloud Agent SOCKS5 configuration changes prepare the new listener before retiring an old port. On same-port replacement failure the previous configuration is restored; applied revision advances only when the new listener starts successfully.
+- Cloud Agent immediately acknowledges rejected desired revisions and reports the live revision/error to Controller; a rollback-specific alert distinguishes a healthy old listener from a failed requested update.
+- Windows Desktop avoids recreating unchanged process/node/log DOM on four-second polls. A Chromium WebView fixture tests retention of focused node selection and correct binding dispatch.
+- These changes do not provide verified UDP/DNS isolation, a Windows PID kill switch, or a tested public egress path.
+
 ## v1.8.0 - 2026-11-04: Unified NodeLink UI
 
 - Apply the supplied DESIGN.md/tokens.css/styleguide.html contract as a shared dark-only design system.

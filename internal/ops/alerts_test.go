@@ -4,6 +4,7 @@ import (
 	"github.com/walkmiao/nodeswarm/internal/control"
 	"github.com/walkmiao/nodeswarm/internal/manager"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,5 +55,19 @@ func TestEvaluateAndMutePersistence(t *testing.T) {
 	_, active = other.List(Evaluate(agents, nodes, now), time.Now())
 	if active != 7 {
 		t.Fatal("unmute not working")
+	}
+}
+
+func TestEvaluateReportsRejectedConfigWithoutDriftDelay(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	agent := control.AgentView{ID: "cloud-rollback", Name: "Cloud Rollback", Kind: "cloud", Status: "online", LastSeen: now.Format(time.RFC3339),
+		DesiredAt: now.Add(-5 * time.Second).Format(time.RFC3339), Revision: 9, Desired: control.ProxyConfig{Enabled: true},
+		Runtime: control.ProxyRuntime{Status: "running", Revision: 8, Error: "configuration rejected: address already in use"}}
+	alerts := Evaluate([]control.AgentView{agent}, nil, now)
+	if len(alerts) != 1 || alerts[0].ID != "agent:cloud-rollback:config-rejected" || alerts[0].Severity != "warning" {
+		t.Fatalf("expected immediate rollback warning: %+v", alerts)
+	}
+	if alerts[0].Detail == "" || !strings.Contains(alerts[0].Detail, "address already in use") {
+		t.Fatalf("error detail lost: %+v", alerts[0])
 	}
 }
